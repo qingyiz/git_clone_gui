@@ -173,6 +173,14 @@
 - 代价：Qt 的系统通知受操作系统权限控制；为投递消息会短暂显示 tray/status item，随后自动隐藏。
 - 被否决方案：恢复阻塞式 QMessageBox、用 shell/AppleScript 注入通知、在 CloneController 中直接依赖 Widgets。
 
+### DEC-014：GitHub Actions 原生双平台构建，签名能力按 Secrets 门控
+
+- 上下文与需求：REQ-011、NFR-010。
+- 决策：单一 `release.yml` 编排独立的 `macos-15` arm64 与 `windows-2022` x64 job；共同执行 Release configure/build/CTest/install，各平台再使用 Qt 官方部署工具生成 DMG/ZIP。普通 push/PR/手动运行上传 Actions artifact，只有 `v*` 标签在两个 job 成功后通过 `gh release` 创建长期 Release。Apple Developer ID/公证和 Windows Authenticode 由独立脚本消费 GitHub Secrets；Secrets 不完整时明确降级为 unsigned artifact。
+- 理由：目标平台原生 runner 能给出真实编译/链接/部署证据；部署与签名脚本可本地复用和单独审查，YAML 只负责编排；无证书时不阻塞开源项目的可下载测试包。
+- 代价：可信发布依赖外部证书、Apple Developer Program 与公证服务；Windows 首期提供便携 ZIP 而非 MSI。
+- 被否决方案：在 Mac 上交叉编译 Windows、上传裸 `.exe`/build-tree `.app`、把证书提交到仓库、每次普通 push 自动创建 Release。
+
 ## 总体架构
 
 ```mermaid
@@ -268,6 +276,13 @@ flowchart LR
 - `DesktopNotifier` 位于 presentation，只依赖 QtWidgets，负责 capability check、匹配应用视觉的通知图标、`showMessage` 和延时隐藏；不访问 controller/store/request。
 - `src/app/main.cpp` 是唯一连接通知请求与具体 notifier 的组合根；通知失败不得反向改变任务状态。
 
+### ARCH-009：CI 编排、平台部署与凭据处理分离
+
+- `.github/workflows/release.yml` 只声明触发条件、runner、最小权限、构建步骤和产物传递，不包含业务源码或证书内容。
+- `src/app/CMakeLists.txt`/`cmake/Deploy*.cmake.in` 拥有 build-tree 到自包含安装树的规则；Windows 资源只归 app target，不进入 core/application/infrastructure/presentation。
+- `scripts/release` 拥有临时证书导入、平台签名、公证、DMG/ZIP 校验；脚本只接受环境变量/参数，不把 Secret 输出到日志或写入仓库路径。
+- release job 只消费已完成的两个 artifact 并写 GitHub contents；构建 job 保持 `contents: read`，PR/fork 无 Secrets 时走 unsigned 分支。
+
 ## 构建与交付结构
 
 ### BUILD-001：现有 target 分层保持不变
@@ -282,9 +297,9 @@ flowchart LR
 
 - 继续使用 `${QT_PACKAGE}::Core/Widgets/Test` 与 AUTOMOC；不添加 QtQuick。
 
-### BUILD-003：Preset 与 bundle 契约保持
+### BUILD-003：Preset 与平台开发产物契约
 
-- Debug/Release、`build/<preset>/bin/GitCloneGui.app`、install RPATH 规则不变。
+- 本地 Debug/Release、macOS `build/<preset>/bin/GitCloneGui.app` 与 Windows `build/<preset>/bin/GitCloneGui.exe` 输出规则保持；CI 使用独立 `build/ci-*` 目录，避免污染本地 preset。
 
 ### BUILD-004：测试所有权扩展
 
@@ -316,11 +331,20 @@ flowchart LR
 - `GitCloneGui` 组合根只实例化 notifier 并连接信号，不引入平台 shell、额外 framework 或新 target 边。
 - `test_presentation` 验证 Completed/Failed 各恰好一次对应通知且 Cancelled 零次；系统权限/通知中心展示作为 macOS 人工补充，不在测试中实际弹通知。
 
+### BUILD-008：GitHub 双平台部署、签名与发布
+
+- Windows：Visual Studio 2022 x64/MSVC 编译显式使用 UTF-8；app target 包含 `.ico`/`.rc`；install tree 为 `build/ci-windows/install/bin`，install script 调用同 Qt kit 的 `windeployqt` 收集 Qt DLL、`platforms/qwindows.dll` 和 compiler runtime；可选脚本用 PFX + `signtool` 签名主 `.exe`，最终 ZIP 根目录为 `GitCloneGui/`。
+- macOS：`macos-15` arm64 runner 安装 Qt 6.8 LTS；现有 install script 继续用同 Qt kit 的 `macdeployqt`，存在 `GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY` 时启用 notarization signing/hardened runtime/timestamp；最终以 staging app + `/Applications` 链接生成 DMG。
+- 公证：仅在 Developer ID 签名与 `APPLE_ID`、`APPLE_APP_PASSWORD`、`APPLE_TEAM_ID` 齐全时提交最终 DMG，等待 accepted 后 staple 并用 `spctl`/`stapler validate` 验证。
+- GitHub：第三方 Actions 固定 commit SHA；两个 build job 分别上传单文件 artifact，tag-only release job 下载并校验恰有 DMG/ZIP 后通过 `gh release create/upload` 发布。
+
 ## 平台与交付矩阵
 
 | 目标平台/架构 | 开发构建物 | 安装产物 | 发布包 | 运行时依赖 | 原生验证 |
 |---|---|---|---|---|---|
 | macOS / arm64 | `build/debug/bin/GitCloneGui.app`，带 `.icns`、仍可依赖开发 Qt | `build/install/GitCloneGui.app`，自包含 Qt Framework/plugins | 不适用 | 安装产物内置 Qt 5.15.2 framework/plugin；运行仍需系统 Git | Debug/Release、CTest、self-contained delivery、`otool`、launch、Finder 图标检查 |
+| GitHub macOS / arm64 | `build/ci-macos/bin/GitCloneGui.app` | `build/ci-macos/install/GitCloneGui.app`，Qt 6.8 自包含、按 Secrets 可选 Developer ID 签名 | `GitCloneGui-macOS-arm64.dmg`；`v*` 附加到 Release | Bundle 内置 Qt Framework/Cocoa plugin；运行仍需系统 Git | `macos-15` 原生 configure/build/CTest/install、bundle 结构、codesign/notary 条件验证 |
+| GitHub Windows / x64 | `build/ci-windows/bin/GitCloneGui.exe` | `build/ci-windows/install/bin/`，Qt 6.8 DLL/plugins/MSVC runtime、按 Secrets 可选 Authenticode | `GitCloneGui-Windows-x64.zip`；`v*` 附加到 Release | ZIP 内置 Qt/MSVC 运行时；运行仍需 Git for Windows | `windows-2022` 原生 configure/build/CTest/install、目录结构、签名条件验证 |
 
 ### macOS 应用束约束
 
@@ -328,7 +352,14 @@ flowchart LR
 - `Contents/Resources/GitCloneGui.icns` 必须存在，`CFBundleIconFile=GitCloneGui.icns`。
 - 安装树必须包含 `Contents/Frameworks/QtCore.framework`、`QtGui.framework`、`QtWidgets.framework` 和 `Contents/PlugIns/platforms/libqcocoa.dylib`。
 - QSettings 使用 macOS 用户域，由 organization/application 名决定；不写入 bundle。
-- 开发构建物与安装/部署产物分离；不新增 DMG、Developer ID 签名或公证。
+- 开发构建物与安装/部署产物分离；GitHub job 基于安装树创建 DMG。没有 Secrets 时 DMG 为未签名测试包；Secrets 完整时必须通过 Developer ID、公证和 stapling 验证。
+
+### Windows 便携包约束
+
+- `GitCloneGui.exe` 使用 `WIN32` subsystem，并通过 `.rc` 嵌入与 macOS 一致的 Windows `.ico`。
+- `cmake --install` 的 `bin/` 是部署根；必须含 `Qt6Core.dll`、`Qt6Gui.dll`、`Qt6Widgets.dll`、`platforms/qwindows.dll` 及 `windeployqt` 判定的 compiler runtime。
+- ZIP 内保留单一 `GitCloneGui/` 根目录；不生成 MSI，不把 Qt 开发目录或证书临时文件打入 ZIP。
+- 仅主程序由项目证书 Authenticode 签名；Qt/运行库保留上游签名。签名路径必须 timestamp 并用 `signtool verify /pa` 验证。
 
 ## 复杂度预算与演进规则
 
@@ -341,6 +372,8 @@ flowchart LR
 | Store | 新适配器 | QSettings 泄漏到 presentation/application | 保持 port/adapter | include 扫描 |
 | 顶层 CMake | 35 行 | 出现模块源码/样式/设置细节 | 下沉模块 CMake | 清单审查 |
 | app CMake | 29 行 | 部署脚本逻辑超过约 80 行或混入其他平台细节 | 提取 `cmake/DeployMacOS.cmake.in` | 清单审查 + install 回归 |
+| Release workflow | 新增 | 单个 YAML step 混合证书导入、签名、公证与打包细节 | 下沉 `scripts/release` 平台脚本 | actionlint/YAML 解析 + 原生 run |
+| Release scripts | 新增 | 单脚本同时处理 macOS 与 Windows 或打印 Secret | 按平台/职责拆分并只经环境变量传值 | shell/PowerShell 静态审查 |
 
 ## 接口契约
 
@@ -455,6 +488,10 @@ save debounce:
 | 旧/无 schema | load nullopt | 首次默认 1 张空卡 | 无错误 | 用户填写 |
 | 远程分支查询失败/超时 | QProcess exit/error/timer | 释放请求、发非阻塞 error | selector tooltip/error property | 保持手工输入、URL 变化可重试 |
 | 目标目录为文件或非空目录 | core 校验 | 不启动 | “父项目目标目录必须为空” | 更改目录名或清空目录（用户自行处理） |
+| Windows/macOS 编译或 CTest 失败 | Actions job exit code | 停止该平台 job，不上传伪成品 | GitHub Checks 失败及日志 | 修复后重新运行 |
+| Qt 部署工具缺失/失败 | install script fatal | 停止打包 | GitHub step 明确失败 | 检查 Qt kit/action 版本 |
+| 签名 Secrets 缺失或不完整 | 平台脚本条件检查 | 跳过真实签名/公证，标记 unsigned | Job Summary | 配齐 Secrets 后重跑 |
+| 签名或公证验证失败 | `codesign`/`notarytool`/`signtool` 非零 | 停止发布，不上传冒充正式签名的包 | GitHub job 失败 | 更新证书/密码/协议后重跑 |
 
 ## 非功能设计
 
@@ -465,6 +502,8 @@ save debounce:
 - 兼容性：不依赖 macOS 私有 API；QSettings 使用 NativeFormat，测试使用 IniFormat 临时文件。
 - 远程查询：450ms debounce、15 秒超时、`GIT_TERMINAL_PROMPT=0`、每 URL 会话缓存；只传结构化参数，不记录 URL/refs 到日志。
 - 结果/日志：任务结束后的状态卡优先保持到下一次配置编辑；纵向 splitter 默认分配日志不少于 280px，用户可拖动。
+- 发布安全：工作流顶层只读权限，tag release job 单独 `contents: write`；Actions 固定 SHA；证书从 Secrets 写入 runner 临时目录/临时 keychain，job 生命周期结束即销毁。
+- 交付兼容：GitHub 标准 runner 只承诺 macOS arm64 与 Windows x64；macOS Intel/universal、Windows ARM64、MSI/PKG 不在本轮契约。
 
 ## 正确性属性
 
@@ -546,6 +585,18 @@ save debounce:
 - 属性：任意克隆状态序列中，每个最终 Completed 恰好产生一个 Information 完成通知请求，每个最终 Failed 恰好产生一个 Critical 失败通知请求；Cancelled、父阶段成功和中间子阶段成功产生零个通知。notifier capability 失败不改变结果或页内状态。
 - 验证：presentation 的可控 runner 完成/失败/取消信号计数和标题/级别测试，以及 notifier capability 代码审查。
 
+### PROP-014：每个平台发布包具有完整运行时闭包
+
+- 来源：REQ-011 / AC-011.2、AC-011.3。
+- 属性：成功上传的 Windows ZIP 解压后包含 exe、Qt Core/Gui/Widgets DLL、qwindows plugin 和 compiler runtime；macOS DMG 内 app 包含 Qt Frameworks、Cocoa plugin 与图标，二者均不引用 runner Qt 安装绝对路径。
+- 验证：原生 runner 上的结构断言、`windeployqt`/`macdeployqt` 退出码、Windows 文件清单、macOS delivery/`otool` 检查。
+
+### PROP-015：签名声明与实际验证状态一致
+
+- 来源：REQ-011 / AC-011.4、AC-011.5，NFR-010。
+- 属性：Secrets 不完整时不运行或声称真实签名；进入 signed path 后任何导入、timestamp、签名、公证、staple 或 verify 失败都会使 job 失败，因而 Release 不会发布未通过验证却标称 signed 的包。
+- 验证：workflow 条件/summary 审查、无 Secret run、配置 Secret 后的 `codesign`/`spctl`/`notarytool`/`signtool` 日志。
+
 ## 测试策略
 
 | 行为/属性 | 层级 | 场景 | 证据 |
@@ -559,6 +610,7 @@ save debounce:
 | REQ-008 / PROP-008 | app/resource | RGBA、四角透明、Bundle icns 反解 | alpha 像素断言 + Dock/Finder 检查 |
 | REQ-009 / PROP-009 | infrastructure/presentation | 本地 refs、默认/常用排序、并发、错误、可编辑包含匹配 | `test_git_remote_branches` + `test_presentation` |
 | REQ-010 / PROP-010,011,013 | core/presentation | 空/非空/文件、页内成功失败、splitter 默认日志高度、最终成功/失败通知次数与取消零通知 | core/UI tests + snapshot |
+| REQ-011 / PROP-014,015 | CI/delivery | Windows/macOS 原生 build+CTest、自包含结构、unsigned 降级、签名/公证门控、tag Release | Actions jobs + artifact/Release 清单 + 平台签名工具 |
 
 ## 需求覆盖矩阵
 
@@ -574,15 +626,18 @@ save debounce:
 | REQ-008 | app CMake/resources/install script | BUILD-003, BUILD-005 | DEC-008,009 | PROP-007,008 | icon alpha/bundle/self-contained delivery/launch |
 | REQ-009 | RemoteBranchService/GitRemoteBranchService/BranchSelector | ARCH-007, BUILD-006 | DEC-010,011 | PROP-009,012 | infrastructure/presentation/snapshot |
 | REQ-010 | CloneRequest/MainWindow/MainWindowUi/DesktopNotifier | ARCH-002, ARCH-004, ARCH-006, ARCH-008 | DEC-012,013 | PROP-010,011,013 | core/presentation/snapshot/notification signal |
+| REQ-011 | app CMake/Deploy scripts/release workflow | ARCH-009, BUILD-003, BUILD-005, BUILD-008 | DEC-014 | PROP-014,015 | Windows/macOS Actions delivery/signature/release |
 
 ## 风险与未决问题
 
 - RISK-001：QSS 在 Qt 5/6 和不同平台细节会有差异；以 macOS Qt 5 原生截图为本轮证据。
 - RISK-002：保存的 URL 可能含用户手工嵌入 Token；UI/README 明示风险，不尝试不可靠地解析/脱敏所有 URL 格式。
-- RISK-003：Qt 6 构建仍未验证，不扩大已验证声明。
+- RISK-003：Qt 6 由新增 GitHub 双平台 job 验证；在首个成功 run 前仍标记为待验证，不能用 YAML 静态检查替代。
 - RISK-004：自包含 Bundle 体积会从 KB 级增加到数十 MB；这是 Framework/plugin 闭包的预期代价。
-- RISK-005：未签名、未公证仍可能触发其他 Mac 的 Gatekeeper；本轮只验证本机原生启动并明确该限制。
+- RISK-005：未签名、未公证 artifact 会触发 Gatekeeper；只有配置 Developer ID/公证 Secrets 并通过在线验证的 tag 包才能声明可信分发。
 - RISK-006：Quick Look 等 thumbnail 工具可能把透明 SVG 合成到白色画布；图标生成禁止使用该中间结果并以像素 alpha 断言防回归。
 - RISK-007：通用 `ls-remote` 无提交时间，分支“活跃”只能以默认/常用工作流启发式表达；UI 文案使用“默认与常用优先”。
 - RISK-008：私有远端可能依赖交互式认证；查询进程禁止终端提示并超时，用户仍可手工输入，实际 clone 沿用原凭据流程。
-- 无阻塞设计问题。
+- RISK-009：Apple/Windows 证书获取、续期和费用属于外部状态；本实现提供安全消费和验证路径，不伪造证书。
+- RISK-010：GitHub runner 与 Qt 下载源可能变化；固定 runner 大版本、Qt 6.8 LTS 范围和 Actions commit，首个线上 run 作为最终交付证据。
+- 代码设计无阻塞问题；真实 signed/notarized 证据待用户配置 Secrets 后由线上 run 产生。

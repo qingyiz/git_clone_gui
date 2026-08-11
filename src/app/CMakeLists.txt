@@ -4,8 +4,22 @@ if(APPLE)
         MACOSX_PACKAGE_LOCATION "Resources"
     )
     add_executable(GitCloneGui MACOSX_BUNDLE main.cpp "${GIT_CLONE_GUI_ICON}")
+elseif(WIN32)
+    set(GIT_CLONE_GUI_WINDOWS_ICON
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/GitCloneGui.ico"
+    )
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/WindowsResources.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/WindowsResources.rc"
+        @ONLY
+    )
+    add_executable(GitCloneGui WIN32
+        main.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/WindowsResources.rc"
+        "${GIT_CLONE_GUI_WINDOWS_ICON}"
+    )
 else()
-    add_executable(GitCloneGui WIN32 main.cpp)
+    add_executable(GitCloneGui main.cpp)
 endif()
 
 target_link_libraries(GitCloneGui
@@ -28,37 +42,5 @@ set_target_properties(GitCloneGui PROPERTIES
 
 git_clone_enable_warnings(GitCloneGui)
 
-install(TARGETS GitCloneGui
-    BUNDLE DESTINATION .
-    RUNTIME DESTINATION bin
-)
-
-if(APPLE)
-    if(NOT TARGET ${QT_PACKAGE}::qmake)
-        message(FATAL_ERROR "当前 Qt kit 未提供 ${QT_PACKAGE}::qmake，无法定位 macdeployqt。")
-    endif()
-
-    get_target_property(_git_clone_gui_qmake ${QT_PACKAGE}::qmake IMPORTED_LOCATION)
-    get_filename_component(_git_clone_gui_qt_bin_dir
-        "${_git_clone_gui_qmake}"
-        DIRECTORY
-    )
-    find_program(GIT_CLONE_GUI_MACDEPLOYQT
-        NAMES macdeployqt
-        HINTS "${_git_clone_gui_qt_bin_dir}"
-        NO_DEFAULT_PATH
-    )
-
-    if(NOT GIT_CLONE_GUI_MACDEPLOYQT)
-        message(FATAL_ERROR
-            "当前 Qt kit 的 bin 目录中未找到 macdeployqt：${_git_clone_gui_qt_bin_dir}"
-        )
-    endif()
-
-    configure_file(
-        "${PROJECT_SOURCE_DIR}/cmake/DeployMacOS.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/DeployMacOS.cmake"
-        @ONLY
-    )
-    install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/DeployMacOS.cmake")
-endif()
+include("${PROJECT_SOURCE_DIR}/cmake/ConfigureAppDeployment.cmake")
+git_clone_configure_app_deployment(GitCloneGui)

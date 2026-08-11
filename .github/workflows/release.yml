@@ -1,0 +1,198 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  QT_VERSION: '6.8.*'
+
+jobs:
+  macos-arm64:
+    name: macOS arm64
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Qt 6.8 LTS
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          target: desktop
+          cache: true
+
+      - name: Import optional Developer ID certificate
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: bash scripts/release/import-macos-certificate.sh
+
+      - name: Configure
+        shell: bash
+        run: >-
+          cmake -S . -B build/ci-macos -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build/ci-macos --parallel
+
+      - name: Test
+        run: ctest --test-dir build/ci-macos --output-on-failure
+
+      - name: Install Qt runtime
+        run: >-
+          cmake --install build/ci-macos
+          --prefix "$GITHUB_WORKSPACE/build/ci-macos/install"
+
+      - name: Package, optionally notarize, and verify DMG
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: >-
+          bash scripts/release/package-macos.sh
+          build/ci-macos/install/GitCloneGui.app
+          dist/GitCloneGui-macOS-arm64.dmg
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: GitCloneGui-macOS-arm64
+          path: dist/GitCloneGui-macOS-arm64.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary signing keychain
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${MACOS_KEYCHAIN_PATH:-}" && -e "$MACOS_KEYCHAIN_PATH" ]]; then
+            security delete-keychain "$MACOS_KEYCHAIN_PATH"
+          fi
+
+  windows-x64:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Qt 6.8 LTS
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/ci-windows
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build/ci-windows --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build/ci-windows -C Release --output-on-failure
+
+      - name: Install Qt and MSVC runtime
+        shell: pwsh
+        run: >-
+          cmake --install build/ci-windows
+          --config Release
+          --prefix "$env:GITHUB_WORKSPACE/build/ci-windows/install"
+
+      - name: Apply optional Authenticode signature
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: >-
+          ./scripts/release/sign-windows.ps1
+          -Executable build/ci-windows/install/bin/GitCloneGui.exe
+
+      - name: Package and verify portable ZIP
+        shell: pwsh
+        run: >-
+          ./scripts/release/package-windows.ps1
+          -InstallBin build/ci-windows/install/bin
+          -OutputZip dist/GitCloneGui-Windows-x64.zip
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: GitCloneGui-Windows-x64
+          path: dist/GitCloneGui-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - macos-arm64
+      - windows-x64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: GitCloneGui-macOS-arm64
+          path: dist
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: GitCloneGui-Windows-x64
+          path: dist
+
+      - name: Verify release attachments
+        shell: bash
+        run: |
+          test -s dist/GitCloneGui-macOS-arm64.dmg
+          test -s dist/GitCloneGui-Windows-x64.zip
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* \
+              --verify-tag \
+              --title "GitCloneGui $tag" \
+              --generate-notes
+          fi
