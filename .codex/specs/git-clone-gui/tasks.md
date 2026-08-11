@@ -303,17 +303,17 @@
 - [ ] TASK-020：补齐 Windows 原生 target 资源与自包含安装树
   - 类型：required
   - 需求：REQ-004、REQ-011
-  - 设计：DEC-003、DEC-014；ARCH-009；BUILD-003、BUILD-008；PROP-014
+  - 设计：DEC-003、DEC-014；ARCH-002、ARCH-009；BUILD-003、BUILD-008；PROP-001、PROP-014
   - 单一变更原因：把现有“仅保留 WIN32 编译入口”升级为有图标、UTF-8 文本和 Qt/MSVC 运行时闭包的 Windows x64 便携应用。
   - 模块/构建单元：`GitCloneGui` app target、Windows resource、Windows install deploy script。
-  - 架构约束：ARCH-009 / BUILD-003、BUILD-008；平台资源和部署只归 app/cmake，不修改业务 target 或引入新 link 边。
+  - 架构约束：ARCH-002、ARCH-009 / BUILD-003、BUILD-008；平台资源和部署只归 app/cmake；Windows 原生测试暴露的路径分隔符问题只在 core 路径不变量内做最小修复，不引入新 link 边。
   - 依赖变化：无生产 link 边变化；MSVC target compile options 增加 `/utf-8`；Windows app sources 增加 `.rc/.ico`。
   - 平台/交付物：Windows x64 build-tree `build/ci-windows/bin/GitCloneGui.exe`；安装树 `build/ci-windows/install/bin` 含 exe/DLL/plugins/runtime。
   - 依赖：TASK-019。
-  - 修改范围：`cmake/CompilerWarnings.cmake`、`cmake/ConfigureAppDeployment.cmake`、`cmake/DeployWindows.cmake.in`、`src/app/CMakeLists.txt`、`src/app/resources/GitCloneGui.ico`、`src/app/WindowsResources.rc.in`；不改 core/application/infrastructure/presentation 行为。
+  - 修改范围：`cmake/CompilerWarnings.cmake`、`cmake/ConfigureAppDeployment.cmake`、`cmake/DeployWindows.cmake.in`、`src/app/CMakeLists.txt`、`src/app/resources/GitCloneGui.ico`、`src/app/WindowsResources.rc.in`；若 Windows 原生测试暴露平台路径差异，可最小修改 `src/core/CloneRequest.cpp` 及对应既有 core 回归，不改 application/infrastructure/presentation 行为。
   - 产出：正确的 APPLE/WIN32/其他平台 target 分支、Windows icon、同 Qt kit 的 `windeployqt` install-time 部署。
   - 验证：本机 CMake 静态/回归；`windows-2022` Release configure/build/CTest/install；断言 exe、Qt DLL、qwindows plugin、compiler runtime。
-  - 实施记录：已实现 APPLE/WIN32/其他平台 target 分支，新增 256×256 RGBA `.ico` 与配置生成的 Windows resource，MSVC 增加 `/utf-8`；部署配置抽到 59 行 `ConfigureAppDeployment.cmake`，Windows install script 使用同 Qt kit 的 `windeployqt` 并断言 qwindows plugin。本机 Debug/Release CMake 与 6/6 CTest 均通过，app CMake 保持 46 行且无业务依赖变化；Windows x64 原生 build/install 证据待 workflow 推送后取得，因此任务暂不勾选。
+  - 实施记录：已实现 APPLE/WIN32/其他平台 target 分支，新增 256×256 RGBA `.ico` 与配置生成的 Windows resource，MSVC 增加 `/utf-8`；部署配置抽到 59 行 `ConfigureAppDeployment.cmake`，Windows install script 使用同 Qt kit 的 `windeployqt` 并断言 qwindows plugin。本机 Debug/Release CMake 与 6/6 CTest 均通过，app CMake 保持 46 行且无业务依赖变化。首轮 Windows runner 已成功编译全部 target，但 core/controller/真实 Git 测试暴露 `cleanPath` 正斜杠与 `QDir::separator()` 反斜杠混合导致的合法路径逃逸误判；已在 core 内统一为 Qt 正斜杠并沿用 Windows case-folded identity，待第二轮 runner 验证。
 
 - [ ] TASK-021：实现 GitHub Actions 双平台打包与可选签名公证
   - 类型：required

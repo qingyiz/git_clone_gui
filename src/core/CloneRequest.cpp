@@ -139,11 +139,14 @@ ValidationResult buildClonePlan(const CloneRequest &request)
         QString childTarget;
         if (!parentTarget.isEmpty() && !normalizedChildPath.isEmpty()) {
             childTarget = QDir::cleanPath(QDir(parentTarget).absoluteFilePath(normalizedChildPath));
-            QString parentPrefix = parentTarget;
-            if (!parentPrefix.endsWith(QDir::separator())) {
-                parentPrefix.append(QDir::separator());
+            const QString normalizedParentTarget = QDir::fromNativeSeparators(parentTarget);
+            const QString normalizedChildTarget = QDir::fromNativeSeparators(childTarget);
+            QString parentPrefix = normalizedParentTarget;
+            if (!parentPrefix.endsWith(QLatin1Char('/'))) {
+                parentPrefix.append(QLatin1Char('/'));
             }
-            if (!childTarget.startsWith(parentPrefix) || childTarget == parentTarget) {
+            if (!pathIdentity(normalizedChildTarget).startsWith(pathIdentity(parentPrefix))
+                || pathIdentity(normalizedChildTarget) == pathIdentity(normalizedParentTarget)) {
                 result.errors.append(prefix + QStringLiteral("目标路径不在父项目目录内。"));
             } else if (childTargets.contains(pathIdentity(childTarget))) {
                 result.errors.append(prefix + QStringLiteral("目标路径与其他子仓库重复：%1").arg(childTarget));
