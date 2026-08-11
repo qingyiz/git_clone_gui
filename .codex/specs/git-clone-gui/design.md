@@ -181,6 +181,14 @@
 - 代价：可信发布依赖外部证书、Apple Developer Program 与公证服务；Windows 首期提供便携 ZIP 而非 MSI。
 - 被否决方案：在 Mac 上交叉编译 Windows、上传裸 `.exe`/build-tree `.app`、把证书提交到仓库、每次普通 push 自动创建 Release。
 
+### DEC-015：无 Developer ID 时也对部署 Bundle 执行完整 ad-hoc 重签与严格验证
+
+- 上下文与需求：REQ-011 / AC-011.3、AC-011.4，NFR-007；FACT-021。
+- 决策：`DeployMacOS.cmake` 在没有 `GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY` 时向同 Qt kit 的 `macdeployqt` 传递 `-codesign=-`，由部署工具按嵌套代码顺序对 executable、Frameworks、PlugIns 和最终 `.app` 统一 ad-hoc 重签；`package-macos.sh` 无论是否存在 Developer ID 都先执行 `codesign --verify --deep --strict`，验证失败即停止上传。ad-hoc 仅保证 Bundle 未被部署过程破坏，不标记为 Developer ID 签名或公证。
+- 理由：Apple Silicon 链接器给主程序生成的 ad-hoc 签名在部署资源与嵌套代码后不再代表完整 Bundle；使用 `macdeployqt` 已提供的 `-codesign` 能保持 Qt 5.15/6 共用部署路径，并把签名顺序留给平台部署工具。
+- 代价：无证书 Release 仍会被 Gatekeeper 识别为未知开发者，首次运行需要用户在“系统设置 → 隐私与安全性”选择“仍要打开”；只有 Developer ID + 公证能实现可信无覆盖步骤分发。
+- 被否决方案：跳过 `codesign` 检查继续上传、让用户执行 `xattr -dr` 清除系统隔离、只重签主 executable、把 Apple Development 证书冒充站外分发证书。
+
 ## 总体架构
 
 ```mermaid
@@ -334,7 +342,7 @@ flowchart LR
 ### BUILD-008：GitHub 双平台部署、签名与发布
 
 - Windows：Visual Studio 2022 x64/MSVC 编译显式使用 UTF-8；app target 包含 `.ico`/`.rc`；install tree 为 `build/ci-windows/install/bin`，install script 调用同 Qt kit 的 `windeployqt` 收集 Qt DLL、`platforms/qwindows.dll` 和 compiler runtime；可选脚本用 PFX + `signtool` 签名主 `.exe`，最终 ZIP 根目录为 `GitCloneGui/`。
-- macOS：`macos-15` arm64 runner 安装 Qt 6.8 LTS；现有 install script 继续用同 Qt kit 的 `macdeployqt`，存在 `GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY` 时启用 notarization signing/hardened runtime/timestamp；最终以 staging app + `/Applications` 链接生成 DMG。
+- macOS：`macos-15` arm64 runner 安装 Qt 6.8 LTS；install script 使用同 Qt kit 的 `macdeployqt`，存在 `GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY` 时启用 notarization signing/hardened runtime/timestamp，否则使用 `-codesign=-` 完整 ad-hoc 重签；打包前无条件严格验证 Bundle，最终以 staging app + `/Applications` 链接生成 DMG。
 - 公证：仅在 Developer ID 签名与 `APPLE_ID`、`APPLE_APP_PASSWORD`、`APPLE_TEAM_ID` 齐全时提交最终 DMG，等待 accepted 后 staple 并用 `spctl`/`stapler validate` 验证。
 - GitHub：第三方 Actions 固定 commit SHA；两个 build job 分别上传单文件 artifact，tag-only release job 下载并校验恰有 DMG/ZIP 后通过 `gh release create/upload` 发布。
 
@@ -343,7 +351,7 @@ flowchart LR
 | 目标平台/架构 | 开发构建物 | 安装产物 | 发布包 | 运行时依赖 | 原生验证 |
 |---|---|---|---|---|---|
 | macOS / arm64 | `build/debug/bin/GitCloneGui.app`，带 `.icns`、仍可依赖开发 Qt | `build/install/GitCloneGui.app`，自包含 Qt Framework/plugins | 不适用 | 安装产物内置 Qt 5.15.2 framework/plugin；运行仍需系统 Git | Debug/Release、CTest、self-contained delivery、`otool`、launch、Finder 图标检查 |
-| GitHub macOS / arm64 | `build/ci-macos/bin/GitCloneGui.app` | `build/ci-macos/install/GitCloneGui.app`，Qt 6.8 自包含、按 Secrets 可选 Developer ID 签名 | `GitCloneGui-macOS-arm64.dmg`；`v*` 附加到 Release | Bundle 内置 Qt Framework/Cocoa plugin；运行仍需系统 Git | run `31506923442`：configure/build/CTest 6/6/install/unsigned DMG/artifact 成功；codesign/notary 待 Secrets |
+| GitHub macOS / arm64 | `build/ci-macos/bin/GitCloneGui.app` | `build/ci-macos/install/GitCloneGui.app`，Qt 6.8 自包含；无 Secrets 时完整 ad-hoc 签名，有 Secrets 时 Developer ID 签名 | `GitCloneGui-macOS-arm64.dmg`；`v*` 附加到 Release | Bundle 内置 Qt Framework/Cocoa plugin；运行仍需系统 Git | 原生 runner configure/build/CTest/install；`codesign --verify --deep --strict`；DMG 挂载、quarantine 等价检查；Developer ID/notary 待 Secrets |
 | GitHub Windows / x64 | `build/ci-windows/bin/GitCloneGui.exe` | `build/ci-windows/install/bin/`，Qt 6.8 DLL/plugins/MSVC runtime、按 Secrets 可选 Authenticode | `GitCloneGui-Windows-x64.zip`；`v*` 附加到 Release | ZIP 内置 Qt/MSVC 运行时；运行仍需 Git for Windows | run `31506923442`：configure/build/CTest 6/6/windeployqt/runtime/ZIP/artifact 成功；Authenticode 待 Secrets |
 
 ### macOS 应用束约束
@@ -352,7 +360,7 @@ flowchart LR
 - `Contents/Resources/GitCloneGui.icns` 必须存在，`CFBundleIconFile=GitCloneGui.icns`。
 - 安装树必须包含 `Contents/Frameworks/QtCore.framework`、`QtGui.framework`、`QtWidgets.framework` 和 `Contents/PlugIns/platforms/libqcocoa.dylib`。
 - QSettings 使用 macOS 用户域，由 organization/application 名决定；不写入 bundle。
-- 开发构建物与安装/部署产物分离；GitHub job 基于安装树创建 DMG。没有 Secrets 时 DMG 为未签名测试包；Secrets 完整时必须通过 Developer ID、公证和 stapling 验证。
+- 开发构建物与安装/部署产物分离；GitHub job 基于安装树创建 DMG。没有 Secrets 时 `.app` 必须通过完整 ad-hoc 签名结构验证，但 DMG 不具有 Developer ID 信任链；Secrets 完整时必须通过 Developer ID、公证和 stapling 验证。
 
 ### Windows 便携包约束
 
@@ -585,17 +593,17 @@ save debounce:
 - 属性：任意克隆状态序列中，每个最终 Completed 恰好产生一个 Information 完成通知请求，每个最终 Failed 恰好产生一个 Critical 失败通知请求；Cancelled、父阶段成功和中间子阶段成功产生零个通知。notifier capability 失败不改变结果或页内状态。
 - 验证：presentation 的可控 runner 完成/失败/取消信号计数和标题/级别测试，以及 notifier capability 代码审查。
 
-### PROP-014：每个平台发布包具有完整运行时闭包
+### PROP-014：每个平台发布包具有完整运行时闭包和有效 Bundle 结构
 
 - 来源：REQ-011 / AC-011.2、AC-011.3。
-- 属性：成功上传的 Windows ZIP 解压后包含 exe、Qt Core/Gui/Widgets DLL、qwindows plugin 和 compiler runtime；macOS DMG 内 app 包含 Qt Frameworks、Cocoa plugin 与图标，二者均不引用 runner Qt 安装绝对路径。
-- 验证：原生 runner 上的结构断言、`windeployqt`/`macdeployqt` 退出码、Windows 文件清单、macOS delivery/`otool` 检查。
+- 属性：成功上传的 Windows ZIP 解压后包含 exe、Qt Core/Gui/Widgets DLL、qwindows plugin 和 compiler runtime；macOS DMG 内 app 包含 Qt Frameworks、Cocoa plugin 与图标，二者均不引用 runner Qt 安装绝对路径；macOS 完整 Bundle 在部署后必须通过严格代码签名结构验证。
+- 验证：原生 runner 上的结构断言、`windeployqt`/`macdeployqt` 退出码、Windows 文件清单、macOS delivery/`otool` 与 `codesign --verify --deep --strict` 检查。
 
 ### PROP-015：签名声明与实际验证状态一致
 
 - 来源：REQ-011 / AC-011.4、AC-011.5，NFR-010。
-- 属性：Secrets 不完整时不运行或声称真实签名；进入 signed path 后任何导入、timestamp、签名、公证、staple 或 verify 失败都会使 job 失败，因而 Release 不会发布未通过验证却标称 signed 的包。
-- 验证：workflow 条件/summary 审查、无 Secret run、配置 Secret 后的 `codesign`/`spctl`/`notarytool`/`signtool` 日志。
+- 属性：Secrets 不完整时 macOS 只执行并声明 ad-hoc Bundle 签名，不声称 Developer ID 信任或公证；进入可信 signed path 后任何导入、timestamp、签名、公证、staple 或 verify 失败都会使 job 失败，因而 Release 不会发布签名结构失效的包或把 ad-hoc 包标称为可信签名包。
+- 验证：workflow 条件/summary 审查、无 Secret run 的 ad-hoc identity 与严格验证日志、配置 Secret 后的 `codesign`/`spctl`/`notarytool`/`signtool` 日志。
 
 ## 测试策略
 

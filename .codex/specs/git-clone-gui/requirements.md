@@ -32,6 +32,7 @@
 | FACT-018 | 仓库为公开的 `qingyiz/git_clone_gui`，本地 `main` 与 `origin/main` 当前同位于 `6f002e2`，仓库尚无 `.github/workflows`。 | 已验证 | `git remote/status/log`、`gh repo view` | 可新增 GitHub Actions；现有未提交功能必须保留并随流水线一起提交后才会进入 GitHub 构建。 |
 | FACT-019 | 当前 Mac 仅有 Apple Development 身份，没有可用于站外分发公证的 Developer ID Application 身份；Windows 代码签名证书也未提供。 | 已验证/未知 | `security find-identity`、用户尚未提供证书 | 流水线必须在无凭据时生成明确标识的未签名测试包，在 Secrets 完整时签名/公证，不能伪造签名成功。 |
 | FACT-020 | PR #2 的 Actions run `31506923442` 已在 macOS arm64 与 Windows x64 上完成 Qt 6.8 Release 构建、6/6 CTest、部署、unsigned 打包和 artifact 上传。 | 已验证 | GitHub Actions job/step API、artifact API | Windows 源码编译与两平台 unsigned 交付路径已有原生证据；真实签名、公证与 tag Release 仍待凭据/标签。 |
+| FACT-021 | Release `v0.1.0`/`v0.1.1` 的 DMG 校验和与 Bundle 依赖完整，但部署后的 `.app` 仅保留链接器 ad-hoc 签名；新增 Frameworks/PlugIns/Resources 后未重签，`codesign --verify --deep --strict` 报 `code has no resources but signature indicates they must be present`，Safari quarantine 下被 Gatekeeper 显示为“已损坏”。 | 已验证 | 用户截图；下载文件 SHA-256；DMG 挂载、`codesign`/`spctl` 原生复现 | 无 Developer ID 路径也必须重签整个 Bundle 并严格验证；可信无警告分发仍需要 Developer ID 与公证。 |
 
 ### 技术与运行环境调查
 
@@ -292,8 +293,8 @@
 
 - AC-011.1：对 `main` push、PR、手动触发和 `v*` tag，workflow 应分别在 `macos-15` arm64 与 `windows-2022` x64 原生 runner 上用 Qt 6.8 LTS 进行 Release 配置、编译和全部 CTest；macOS 使用 CMake/Ninja，Windows 使用 CMake/Visual Studio 2022 x64。
 - AC-011.2：Windows job 应运行 `cmake --install` 与 `windeployqt`，生成 `GitCloneGui-Windows-x64.zip`；解压后的根目录必须包含 `GitCloneGui.exe`、Qt DLL、`platforms/qwindows.dll` 和 MSVC runtime，不依赖 runner 的 Qt 安装目录。
-- AC-011.3：macOS job 应运行 `cmake --install` 与 `macdeployqt`，生成 `GitCloneGui-macOS-arm64.dmg`；DMG 内必须包含带 `.icns`、Qt Frameworks 和 Cocoa plugin 的 `GitCloneGui.app`。
-- AC-011.4：当 macOS Developer ID 与 Apple 公证 Secrets 完整时，workflow 应使用 `Developer ID Application` 身份和 Hardened Runtime 签名，使用 `notarytool` 公证最终 DMG、staple ticket，并验证签名/公证；凭据缺失时不得声称已签名，但普通 push/PR 仍可生成未签名测试 artifact。
+- AC-011.3：macOS job 应运行 `cmake --install` 与 `macdeployqt`，生成 `GitCloneGui-macOS-arm64.dmg`；DMG 内必须包含带 `.icns`、Qt Frameworks 和 Cocoa plugin 的 `GitCloneGui.app`。没有 Developer ID 时，`macdeployqt` 仍应使用 ad-hoc identity `-` 对整个部署 Bundle 一致重签，随后 `codesign --verify --deep --strict` 必须通过，不能上传签名结构已失效而被 Gatekeeper 判为“已损坏”的包。
+- AC-011.4：当 macOS Developer ID 与 Apple 公证 Secrets 完整时，workflow 应使用 `Developer ID Application` 身份和 Hardened Runtime 签名，使用 `notarytool` 公证最终 DMG、staple ticket，并验证签名/公证；凭据缺失时不得声称具有 Developer ID 信任链，只能生成通过 Bundle 签名结构验证的 ad-hoc 测试 artifact，并明确提示首次打开仍需在“隐私与安全性”中选择“仍要打开”。
 - AC-011.5：当 Windows PFX 与密码 Secrets 完整时，workflow 应使用 `signtool` 和 RFC3161 timestamp 对 `GitCloneGui.exe` 执行 Authenticode 签名并验证；凭据缺失时生成未签名测试 artifact，不在日志打印私钥或密码。
 - AC-011.6：普通成功运行应上传两个具名 artifact；仅当 ref 为 `refs/tags/v*` 时，release job 才能以最小 `contents: write` 权限创建/更新对应 GitHub Release 并附加 DMG/ZIP。
 - AC-011.7：README 应说明 Actions artifact 与 Release 的区别、标签发版命令、所有 Secrets 的生成/配置方法、未签名包的系统提示以及证书采购前提。
@@ -308,7 +309,7 @@
 | NFR-004 | 兼容性 | 使用 Qt 5.15/6 共有 Core/Widgets/Settings API | Qt 5 构建 + Qt 6 API 审查 |
 | NFR-005 | 隐私 | 只持久化表单字段；不保存日志或独立凭据；明示 URL 中 Token 风险 | store 单元测试与 README 审查 |
 | NFR-006 | 可维护性 | MainWindow 不拥有单卡字段构建细节；卡片和设置适配器分别独立 | 结构检查和 include/link 审查 |
-| NFR-007 | 可部署性 | Release 安装树包含图标、Qt Framework 与 Cocoa platform plugin，且无 Qt 开发机绝对依赖 | bundle 结构、`otool`、delivery self-contained、启动检查 |
+| NFR-007 | 可部署性 | Release 安装树包含图标、Qt Framework 与 Cocoa platform plugin，无 Qt 开发机绝对依赖，且完整 Bundle 通过严格代码签名结构验证 | bundle 结构、`otool`、`codesign --verify --deep --strict`、delivery self-contained、启动检查 |
 | NFR-008 | 远程查询 | 每个分支查询 15 秒超时，设置 `GIT_TERMINAL_PROMPT=0`，结果按请求 ID 隔离并进行会话缓存 | 本地远程测试、超时与过期结果测试 |
 | NFR-009 | 通知可靠性 | 系统通知是最终 Completed/Failed 后的附加副作用；不支持/无权限时静默降级，不能阻塞 UI、改变 outcome 或重复发送 | 完成/失败/取消信号测试与 Qt tray capability 审查 |
 | NFR-010 | 发布安全 | Actions 默认只读；仅 release job 写 contents；第三方 Actions 固定 commit SHA；证书只从 Secrets 注入临时文件/钥匙串并在 job 结束销毁 | workflow 静态审查、GitHub run 日志、签名脚本审查 |
@@ -334,7 +335,7 @@
 | 父项目或任一子仓库失败 | 保留页内结果与日志，并发送一次“克隆失败”系统通知 | REQ-003, REQ-010, NFR-009 |
 | 用户主动取消 | 保留页内结果与日志，不发送系统通知 | REQ-003, REQ-010, NFR-009 |
 | 系统通知不可用或权限被拒绝 | 静默保留页内最终状态，不影响 Completed/Failed 结果 | REQ-010, NFR-009 |
-| 签名 Secrets 缺失 | CI 继续构建测试包，step summary 明确 unsigned；不执行公证/Authenticode | REQ-011, NFR-010 |
+| 签名 Secrets 缺失 | CI 继续构建测试包；macOS Bundle 以 ad-hoc identity 完整重签并严格验证，step summary 明确无 Developer ID 信任链；不执行公证/Authenticode | REQ-011, NFR-007, NFR-010 |
 | 只有部分 macOS Secrets | 不进入签名/公证路径，避免生成看似正式但无法验证的包 | REQ-011, NFR-010 |
 | 推送普通分支/PR | 只上传 Actions artifact，不创建 GitHub Release | REQ-011 |
 | 推送 `v*` 标签 | 两个平台都成功后创建/更新同名 Release 并附加两个平台包 | REQ-011 |
@@ -386,6 +387,7 @@
 | ANA-013 | 触发边界 | REQ-010 | 通知必须排除父阶段/中间子项完成，但用户追加要求最终失败也提示 | MainWindow 仅对最终 `jobFinished(Completed|Failed)` 各发一次对应通知请求，Cancelled 不发，由独立 desktop notifier 适配系统能力 |
 | ANA-014 | 平台范围变化 | REQ-011 | 原 Spec 明确排除 Windows/签名/Release，现需求与其冲突 | 重新打开 requirements，新增双平台原生 runner、部署包、可选签名与标签 Release 契约，不改变业务架构 |
 | ANA-015 | 凭据边界 | REQ-011 | 当前只有 Apple Development 证书，不能用于站外可信分发/公证；Windows 证书未知 | workflow 无 Secrets 时产出测试包，有完整 Secrets 时严格签名验证；文档明确证书申请步骤 |
+| ANA-016 | macOS 交付回归 | REQ-011 | `macdeployqt` 添加资源与嵌套代码后保留了失效的链接器 ad-hoc 签名；只检查文件结构和启动、不执行严格 `codesign`，未发现 Safari 下载后的 Gatekeeper “已损坏” | 无 Developer ID 时调用 `macdeployqt -codesign=-` 重签全部嵌套代码；打包脚本无条件执行严格 Bundle 验证，并用带 quarantine 的副本验证系统行为 |
 
 ## 需求追踪
 
@@ -401,8 +403,8 @@
 | REQ-008 | AC-008.1～AC-008.5 | plist/资源/alpha 检查、self-contained delivery、`otool`、Finder/Dock 启动检查 |
 | REQ-009 | AC-009.1～AC-009.6 | branch service、本地远程集成、presentation 搜索测试与 selector snapshot |
 | REQ-010 | AC-010.1～AC-010.5 | core 目录测试、presentation 状态/布局/通知信号测试与 snapshot |
-| REQ-011 | AC-011.1～AC-011.7 | workflow/schema 审查、macOS/Windows 原生 Actions run、artifact 结构、签名/公证验证、tag Release |
+| REQ-011 | AC-011.1～AC-011.7 | workflow/schema 审查、macOS/Windows 原生 Actions run、artifact 结构、ad-hoc Bundle 严格签名验证、Developer ID/公证门控、tag Release |
 
 ## 未决问题
 
-- 代码和无签名 CI 路径无阻塞问题。真实可信发布仍需用户取得 Developer ID Application、Apple 公证凭据及可选 Windows Authenticode PFX，并配置 GitHub Secrets；在此之前 Release 包属于未签名测试版。
+- ad-hoc Bundle 重签修复需要在 macOS 原生 runner 与 Safari quarantine 等价场景中重新验证。真实可信、无 Gatekeeper 覆盖步骤的发布仍需用户取得 Developer ID Application、Apple 公证凭据及可选 Windows Authenticode PFX，并配置 GitHub Secrets；在此之前 macOS Release 仅属于无 Developer ID 信任链的测试版。

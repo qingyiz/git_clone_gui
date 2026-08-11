@@ -93,7 +93,7 @@ cmake --install build/windows --config Release --prefix build/install-windows
 
 工作流位于 `.github/workflows/release.yml`，执行以下流程：
 
-1. macOS 使用 `macos-15` arm64 runner，Qt 6.8 LTS、CMake/Ninja 完成 Release 编译和全部 CTest；`macdeployqt` 生成自包含 `.app`，随后打成 DMG。
+1. macOS 使用 `macos-15` arm64 runner，Qt 6.8 LTS、CMake/Ninja 完成 Release 编译和全部 CTest；`macdeployqt` 生成自包含 `.app`，无 Developer ID 时对整个 Bundle 执行 ad-hoc 重签并严格验证，随后打成 DMG。
 2. Windows 使用 `windows-2022` x64 runner，Qt 6.8 LTS、Visual Studio 2022 完成 Release 编译和全部 CTest；`windeployqt` 收集 Qt/plugin，脚本补齐 MSVC runtime 后生成便携 ZIP。
 3. 普通 `main` push、PR、手动运行只上传 Actions artifact。
 4. `v*` 标签在两个平台都成功后创建或更新同名 GitHub Release，并附加 DMG 与 ZIP。
@@ -108,6 +108,10 @@ git push origin v1.0.0
 ```
 
 标签推送后到仓库的 Actions 页面观察两个平台 job；全部成功后，Release 页面会自动出现附件。不要在构建失败时手工上传裸 `.exe` 或 build-tree `.app`，它们没有完整运行时。
+
+没有签名 Secrets 时，workflow 仍会生成测试产物。macOS `.app` 使用 ad-hoc identity 保证部署后的 executable、Frameworks、PlugIns 和 Resources 属于同一个有效 Bundle；这不等于 Developer ID 信任或 Apple 公证。Windows 包在没有 PFX 时同样不具备 Authenticode 信任链，因此 Gatekeeper 或 SmartScreen 仍可能要求额外确认，不要把这类包描述为已签名正式版。
+
+首次打开无 Developer ID 的 macOS 测试包时，如果系统提示无法验证开发者，请先尝试打开一次，然后进入“系统设置 → 隐私与安全性”，在安全性区域点击“仍要打开”，再次确认“打开”。如果系统直接提示应用“已损坏”，说明 Bundle 签名结构没有通过验证，应停止使用并下载修复后的版本，而不是清除 quarantine 属性绕过检查。操作含义和安全风险见 [Apple 官方说明](https://support.apple.com/102445)。
 
 ### macOS 签名与公证
 
@@ -209,7 +213,7 @@ find build/install/GitCloneGui.app/Contents -maxdepth 2 -type d
 otool -L build/install/GitCloneGui.app/Contents/MacOS/GitCloneGui
 ```
 
-GitHub Actions 会在安装树基础上生成 DMG。没有 Secrets 时它是 unsigned 测试包；配齐 Developer ID 和公证 Secrets 后，流水线会生成并验证已签名、公证、stapled 的 DMG。项目仍不制作 PKG、不提交 Mac App Store，也不实现自动更新。
+GitHub Actions 会在安装树基础上生成 DMG。没有 Secrets 时 `.app` 是经过完整 ad-hoc Bundle 重签和严格验证、但不受 Gatekeeper 信任的测试包；配齐 Developer ID 和公证 Secrets 后，流水线会生成并验证已签名、公证、stapled 的 DMG。项目仍不制作 PKG、不提交 Mac App Store，也不实现自动更新。
 
 ## 项目结构
 
