@@ -1,5 +1,6 @@
 #include "presentation/MainWindow.h"
 
+#include "presentation/BranchSelector.h"
 #include "presentation/ChildRepositoryCard.h"
 
 #include <QCloseEvent>
@@ -7,7 +8,6 @@
 #include <QFileDialog>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
@@ -21,9 +21,18 @@ namespace gitclone {
 MainWindow::MainWindow(CloneController *controller,
                        ConfigurationStore *configurationStore,
                        QWidget *parent)
+    : MainWindow(controller, configurationStore, nullptr, parent)
+{
+}
+
+MainWindow::MainWindow(CloneController *controller,
+                       ConfigurationStore *configurationStore,
+                       RemoteBranchService *branchService,
+                       QWidget *parent)
     : QMainWindow(parent)
     , m_controller(controller)
     , m_configurationStore(configurationStore)
+    , m_branchService(branchService)
 {
     Q_ASSERT(m_controller != nullptr);
     Q_ASSERT(m_configurationStore != nullptr);
@@ -160,10 +169,17 @@ void MainWindow::handleFinished(CloneController::Outcome outcome,
         QTimer::singleShot(0, this, &QWidget::close);
         return;
     }
+    setTaskResult(outcome, message);
     if (outcome == CloneController::Outcome::Completed) {
-        QMessageBox::information(this, QStringLiteral("克隆完成"), message);
+        emit taskResultNotificationRequested(
+            QStringLiteral("GitCloneGui · 克隆完成"),
+            message,
+            NotificationSeverity::Information);
     } else if (outcome == CloneController::Outcome::Failed) {
-        QMessageBox::warning(this, QStringLiteral("克隆失败"), message);
+        emit taskResultNotificationRequested(
+            QStringLiteral("GitCloneGui · 克隆失败"),
+            message,
+            NotificationSeverity::Critical);
     }
 }
 
@@ -185,7 +201,7 @@ CloneRequest MainWindow::currentRequest() const
 {
     CloneRequest request;
     request.parentRepositoryUrl = m_parentRepositoryEdit->text();
-    request.parentBranch = m_parentBranchEdit->text();
+    request.parentBranch = m_parentBranchSelector->branchText();
     request.parentDirectoryName = m_parentDirectoryEdit->text();
     request.destinationRoot = m_destinationRootEdit->text();
     for (const ChildRepositoryCard *card : m_childCards) {
@@ -196,7 +212,7 @@ CloneRequest MainWindow::currentRequest() const
 
 void MainWindow::connectUi()
 {
-    const QList<QLineEdit *> edits {m_parentRepositoryEdit, m_parentBranchEdit,
+    const QList<QLineEdit *> edits {m_parentRepositoryEdit,
                                     m_parentDirectoryEdit, m_destinationRootEdit};
     for (QLineEdit *edit : edits) {
         connect(edit, &QLineEdit::textChanged, this, [this] {
@@ -204,6 +220,12 @@ void MainWindow::connectUi()
             scheduleConfigurationSave();
         });
     }
+    connect(m_parentRepositoryEdit, &QLineEdit::textChanged,
+            m_parentBranchSelector, &BranchSelector::setRepositoryUrl);
+    connect(m_parentBranchSelector, &BranchSelector::branchChanged, this, [this] {
+        updatePreview();
+        scheduleConfigurationSave();
+    });
     connect(m_browseButton, &QPushButton::clicked, this, &MainWindow::chooseDestinationRoot);
     connect(m_addChildButton, &QPushButton::clicked, this, &MainWindow::addEmptyChildCard);
     connect(m_startButton, &QPushButton::clicked, this, &MainWindow::startClone);
@@ -226,7 +248,8 @@ void MainWindow::restoreConfiguration()
     const std::optional<CloneRequest> stored = m_configurationStore->load();
     if (stored.has_value()) {
         m_parentRepositoryEdit->setText(stored->parentRepositoryUrl);
-        m_parentBranchEdit->setText(stored->parentBranch);
+        m_parentBranchSelector->setRepositoryUrl(stored->parentRepositoryUrl);
+        m_parentBranchSelector->setBranchText(stored->parentBranch);
         m_parentDirectoryEdit->setText(stored->parentDirectoryName);
         m_destinationRootEdit->setText(stored->destinationRoot);
         for (const ChildRepositoryRequest &child : stored->children) {
@@ -244,7 +267,7 @@ void MainWindow::restoreConfiguration()
 
 ChildRepositoryCard *MainWindow::addChildCard(const ChildRepositoryRequest &configuration)
 {
-    auto *card = new ChildRepositoryCard(m_childCards.size(), this);
+    auto *card = new ChildRepositoryCard(m_childCards.size(), m_branchService, this);
     card->setConfiguration(configuration);
     connect(card, &ChildRepositoryCard::configurationChanged, this, [this] {
         updatePreview();
@@ -289,7 +312,7 @@ void MainWindow::scheduleConfigurationSave()
 void MainWindow::setConfigurationEnabled(bool enabled)
 {
     m_parentRepositoryEdit->setEnabled(enabled);
-    m_parentBranchEdit->setEnabled(enabled);
+    m_parentBranchSelector->setEnabled(enabled);
     m_parentDirectoryEdit->setEnabled(enabled);
     m_destinationRootEdit->setEnabled(enabled);
     m_browseButton->setEnabled(enabled);
@@ -301,6 +324,7 @@ void MainWindow::setConfigurationEnabled(bool enabled)
 
 void MainWindow::setValidationSummary(const QStringList &errors)
 {
+    m_statusCard->setProperty("statusState", QStringLiteral("normal"));
     if (errors.isEmpty()) {
         m_validationLabel->setProperty("validationState", QStringLiteral("ready"));
         m_validationLabel->setText(QStringLiteral("✓ 配置有效，可以开始克隆"));
@@ -318,6 +342,31 @@ void MainWindow::setValidationSummary(const QStringList &errors)
     }
     m_validationLabel->style()->unpolish(m_validationLabel);
     m_validationLabel->style()->polish(m_validationLabel);
+    m_statusCard->style()->unpolish(m_statusCard);
+    m_statusCard->style()->polish(m_statusCard);
+}
+
+void MainWindow::setTaskResult(CloneController::Outcome outcome, const QString &message)
+{
+    QString state = QStringLiteral("normal");
+    QString summary = QStringLiteral("任务已取消");
+    QString validationState = QStringLiteral("ready");
+    if (outcome == CloneController::Outcome::Completed) {
+        state = QStringLiteral("success");
+        summary = QStringLiteral("✓ 克隆完成");
+    } else if (outcome == CloneController::Outcome::Failed) {
+        state = QStringLiteral("error");
+        summary = QStringLiteral("克隆失败");
+        validationState = QStringLiteral("error");
+    }
+    m_statusCard->setProperty("statusState", state);
+    m_validationLabel->setProperty("validationState", validationState);
+    m_validationLabel->setText(summary);
+    m_statusLabel->setText(message);
+    m_validationLabel->style()->unpolish(m_validationLabel);
+    m_validationLabel->style()->polish(m_validationLabel);
+    m_statusCard->style()->unpolish(m_statusCard);
+    m_statusCard->style()->polish(m_statusCard);
 }
 
 } // namespace gitclone

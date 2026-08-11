@@ -12,16 +12,16 @@
 
 ## 设计摘要
 
-- 目标：把工具交付为可保存配置、支持 0～N 子仓库、带正式图标且可自包含运行的现代 macOS 桌面应用。
-- 覆盖行为：REQ-001～REQ-008。
-- 核心方案：core 以列表生成命令计划；application 用索引驱动父阶段和子队列；infrastructure 继续封装 QProcess，并新增 QSettings 配置适配；presentation 拆出动态子仓库卡片并使用双栏卡片布局。
-- 模块/构建边界：ARCH-001～ARCH-006 / BUILD-001～BUILD-005。
+- 目标：在既有可保存、多仓库、自包含 macOS 应用上增加远程分支搜索，并优化目录、结果和日志体验。
+- 覆盖行为：REQ-001～REQ-010。
+- 核心方案：application 新增独立远程分支查询 port；infrastructure 用独立 `QProcess` 并发执行 `git ls-remote --symref`；presentation 用可编辑 `BranchSelector` 提供下拉和包含式搜索；core 允许已存在空目标目录；执行区改为可拖动纵向 splitter 与页内结果状态。
+- 模块/构建边界：ARCH-001～ARCH-008 / BUILD-001～BUILD-007。
 
 ## 代码库调查
 
 | 证据类型 | 证据 | 已验证事实 | 对设计的影响 |
 |---|---|---|---|
-| 当前结构 | `inspect_structure.py` | 23 个源文件；MainWindow 页面与 UI 构建已拆分；五层 target | 资源/部署继续归 app target，不改变分层 |
+| 当前结构 | `inspect_structure.py` | 实施后 29 个源文件；MainWindow 361 行、UI 构建 284 行；五层 target 保持 | 新 service/selector 未使 MainWindow 越过约 420 行预算，资源/部署仍归 app target |
 | 当前 core | `CloneRequest.h/.cpp` | 已使用 `QList<ChildRepositoryRequest/Plan>` | 本轮不修改 |
 | 当前 application | `CloneController.cpp` | 已用 currentChildIndex 串行推进 0～N 子队列 | 本轮不修改 |
 | 当前 presentation | snapshot、`MainWindow*.cpp` | 双栏卡片界面与集中 QSS 已完成 | 图标沿用其蓝色 “G” 视觉语言 |
@@ -29,6 +29,10 @@
 | 工具链 | CMake cache/既有回归 | Qt 5.15.2、macOS arm64 可构建 | 使用 Qt 5.15/6 公共 API |
 | 当前 Bundle | `du`、`plutil`、`find`、`otool` | Debug 约 524 KB；`CFBundleIconFile` 为空；无 Resources/Frameworks/PlugIns | 现状只是开发构建物，不是最终部署产物 |
 | 部署工具 | `/Users/qingyizhu/Qt5.15.2/bin/macdeployqt -h` | 当前 kit 的官方工具可收集 Framework 与插件 | 安装阶段调用对应 kit 工具生成自包含 Bundle |
+| 分支输入 | `MainWindowUi.cpp`、`ChildRepositoryCard.cpp` | 父/子分支均为普通 `QLineEdit`，URL 变化不触发远程查询 | 新增独立可编辑选择组件，父/子复用 |
+| 远程查询 | `ProcessRunner`、`GitProcessRunner` | 克隆 runner 是单进程互斥状态机，不能承载并发分支查询 | 新建 service port/adapter，每次查询独立 QProcess，不改变克隆状态 |
+| 目录校验 | `CloneRequest.cpp` | `QFileInfo::exists(parentTarget)` 一律拒绝，包括空目录 | 改为仅拒绝文件和非空目录 |
+| 结果与布局 | `MainWindow.cpp`、`MainWindowUi.cpp` | 完成使用 `QMessageBox`；右栏顺序固定，preview 最高 170px 后日志获得余量 | 页内状态卡 + 纵向 splitter，日志默认至少 280px |
 
 ### 工具链与兼容性基线
 
@@ -38,6 +42,7 @@
 | 构建 | CMake 3.27.1、Ninja 1.11.1、Clang 17 | 版本命令 | Preset/输出路径不变 |
 | Qt | Qt 5.15.2 已验证；Qt 6 兼容未原生验证 | CMake cache | 仅用 Core/Widgets/QSettings 公共 API |
 | macOS 部署 | `macdeployqt` 来自当前 Qt 5.15.2 kit | 工具帮助与 qmake query | Release 安装树可原生部署并验证 self-contained |
+| Git 分支广告 | Git 2.44.0、本地 `ls-remote --symref`、官方文档 | HEAD symref 和 heads 可读取；未 fetch 的对象不能按 `committerdate` 排序 | 默认与常用工作分支族优先，不做虚假的最近提交排序 |
 
 ## 约束与设计原则
 
@@ -48,6 +53,8 @@
 - MainWindow 负责页面级布局/状态，单卡字段、标题、删除事件归 `ChildRepositoryCard`。
 - 不引入 QML、第三方主题库、拖拽排序或破坏性目录清理。
 - 图标保留 SVG 源文件并提交生成的 `.icns`；开发 Bundle 可保持轻量，安装树才执行 Qt runtime 部署。
+- 分支查询不复用克隆 runner、不触发 shell、不持久化分支清单；请求 ID、超时和 URL 快照共同隔离过期结果。
+- 结果反馈优先于克隆完成后自动发生的重新校验；用户再次编辑任一配置时才恢复校验视觉状态。
 
 ## 方案比较
 
@@ -58,6 +65,9 @@
 | C：MainWindow 内动态创建全部字段并直接 QSettings | 功能覆盖 | 初始文件少 | MainWindow 膨胀、依赖反转、难测试 | 否决 |
 | D：每次 POST_BUILD 都运行 `macdeployqt` | REQ-008 | build tree 立即自包含 | 每次增量构建都复制/改写 Framework，慢且污染开发产物 | 否决 |
 | E：安装阶段运行当前 kit 的 `macdeployqt` | REQ-008 | 区分开发与部署产物，符合 CMake install 语义 | 最终交付需多执行一次 install | 采用 |
+| F：通用 `git ls-remote --symref` + 默认/常用排序 | REQ-009 | 支持 SSH/HTTPS/本地等 Git URL，不下载对象，不绑定托管平台 | 不能获知最近提交时间 | 采用 |
+| G：GitHub/GitLab API | REQ-009 | 可取得平台特有活跃度元数据 | URL 识别、Token、分页和多平台兼容显著扩大范围 | 否决 |
+| H：浅抓取所有分支后按提交时间排序 | REQ-009 | 可得到真实提交时间 | 大仓库/多分支网络与临时磁盘成本高，违背轻量查询 | 否决 |
 
 ### DEC-001：以结构化 QProcess 参数执行 Git
 
@@ -131,21 +141,61 @@
 - 代价：安装 Bundle 明显变大；未签名部署会留下 ad-hoc/未签名限制。
 - 被否决方案：手工复制 Framework/插件、硬编码 `/Users/...` 路径、对每次 build 执行部署。
 
+### DEC-010：以独立异步 service 查询远程分支
+
+- 上下文与需求：REQ-009、NFR-001、NFR-008。
+- 决策：application 定义 `RemoteBranchService` 和 `RemoteBranchCatalog`；infrastructure 的 `GitRemoteBranchService` 为每个请求创建独立 `QProcess`，以结构化参数执行 `git ls-remote --symref URL HEAD refs/heads/*`，15 秒超时并设置 `GIT_TERMINAL_PROMPT=0`。
+- 理由：父/子 URL 可并发查询且不干扰单进程克隆 runner，仍沿用用户的 Git URL 与 credential helper 配置。
+- 代价：新增请求生命周期、缓存和输出解析逻辑；认证失败只能非阻塞提示。
+- 被否决方案：复用 `GitProcessRunner`、presentation 直接使用 QProcess、同步执行。
+
+### DEC-011：可编辑组合框提供默认/常用优先与包含式搜索
+
+- 上下文与需求：REQ-009 / AC-009.2、AC-009.3。
+- 决策：新增 `BranchSelector : QComboBox`，启用 editable 与 `QCompleter::PopupCompletion + Qt::MatchContains`；结果顺序为 default、常用 exact、常用 namespace、其余稳定名称顺序。折叠 chrome 不调用平台原生 QComboBox paint，而由组件用 QPainter 绘制完整圆角背景/边框、浅分隔线和可翻转 chevron；popup 列表继续使用 Qt 原生模型与 QSS。
+- 理由：一个控件同时覆盖点击选择、任意手输和输入即筛选；Qt 5.15/6 均支持所需 API。
+- 代价：排序代表默认/常用优先而非最近提交，失败状态主要通过 tooltip/控件属性表达；自绘 chrome 需用 snapshot 防止不同 DPI 下的视觉回归。
+- 被否决方案：只读下拉、独立搜索框、伪造提交时间排序。
+
+### DEC-012：页内结果优先并以 splitter 分配执行区
+
+- 上下文与需求：REQ-010、REQ-003、REQ-006。
+- 决策：移除完成/失败 `QMessageBox`；状态卡通过 `statusState=success|error|normal` 显示结果。preview/status 与日志放入纵向 `QSplitter`，日志最小 280px 且为默认主要区域。
+- 理由：结果、错误和日志保留在同一视觉上下文，用户可按需拖动检查完整输出。
+- 代价：MainWindow 需区分“配置校验状态”和“最近任务结果状态”。
+- 被否决方案：仅美化系统 QMessageBox、固定压缩预览高度而不允许用户调整。
+
+### DEC-013：最终 Completed/Failed 通过独立桌面通知适配器提示
+
+- 上下文与需求：REQ-010 / AC-010.5，NFR-009。
+- 决策：MainWindow 只在最终 `jobFinished(Completed|Failed)` 发出 `taskResultNotificationRequested(title, message, severity)`；Completed 使用完成标题和 Information，Failed 使用失败标题和 Critical，Cancelled 不发。presentation 的 `DesktopNotifier` 使用 `QSystemTrayIcon::showMessage` 转交操作系统，并在不支持 tray/messages 时静默返回。app 组合根连接两者。
+- 理由：完成触发语义仍由已有 controller/MainWindow 结果流决定，系统能力封装在独立 UI 适配器；测试可验证请求次数而不真的打扰通知中心。
+- 代价：Qt 的系统通知受操作系统权限控制；为投递消息会短暂显示 tray/status item，随后自动隐藏。
+- 被否决方案：恢复阻塞式 QMessageBox、用 shell/AppleScript 注入通知、在 CloneController 中直接依赖 Widgets。
+
 ## 总体架构
 
 ```mermaid
 flowchart LR
     Card["ChildRepositoryCard"] --> Window["MainWindow"]
+    Selector["BranchSelector"] --> Card
+    Selector --> Window
+    Selector --> BranchPort["RemoteBranchService"]
+    Window --> NotifyRequest["final result notification signal"]
+    NotifyRequest --> Notifier["DesktopNotifier / QSystemTrayIcon"]
     Window --> Controller["CloneController"]
     Window --> StorePort["ConfigurationStore"]
     Controller --> Core["CloneRequest / ClonePlan list"]
     Controller --> RunnerPort["ProcessRunner"]
     GitRunner["GitProcessRunner"] --> RunnerPort
+    BranchGit["GitRemoteBranchService"] --> BranchPort
     Settings["QSettingsConfigurationStore"] --> StorePort
     Root["main.cpp"] --> Window
     Root --> Controller
     Root --> GitRunner
     Root --> Settings
+    Root --> BranchGit
+    Root --> Notifier
 ```
 
 ### 组件与职责
@@ -159,6 +209,10 @@ flowchart LR
 | `ChildRepositoryCard` | 单个子仓库字段、序号、删除信号、配置读写 | child value ↔ signals | REQ-005, REQ-006 |
 | `MainWindow` | 双栏页面、卡片集合、摘要、预览、保存定时器 | 用户事件 ↔ controller/store | REQ-001, REQ-005～REQ-007 |
 | `GitProcessRunner` | 单进程 QProcess 适配 | command ↔ async signals | REQ-002, REQ-003 |
+| `RemoteBranchService` | 分支查询 port、请求 ID 与结果目录 | URL → catalog/error | REQ-009 |
+| `GitRemoteBranchService` | 独立 QProcess、refs 解析、排序、缓存、超时 | Git refs ↔ catalog | REQ-009 |
+| `BranchSelector` | 可编辑下拉、URL debounce、包含式搜索、过期结果隔离、自绘圆角 chrome/chevron | URL/catalog ↔ branch text | REQ-009 |
+| `DesktopNotifier` | 把最终成功/失败请求转为系统托盘消息并处理能力降级/自动隐藏 | title/message/severity → OS notification | REQ-010 |
 
 ## 模块与依赖边界
 
@@ -201,6 +255,19 @@ flowchart LR
 - 不在业务槽函数散落颜色/字体设置。
 - 默认/最小尺寸和 splitter stretch 是页面契约。
 
+### ARCH-007：远程分支查询通过独立 port/adapter 隔离
+
+- `RemoteBranchService` 位于 application，公开 request/cancel 与带请求 ID 的 success/failure 信号；不依赖 Widgets 或具体 QProcess。
+- `GitRemoteBranchService` 位于 infrastructure，拥有并发查询进程、15 秒超时、会话缓存、refs 解析和排序；不得启动 clone/fetch 或修改仓库。
+- `BranchSelector` 位于 presentation，只管理一个 URL/分支输入的 debounce、suggestion model 与过期结果；MainWindow/Card 不解析 Git 输出。
+- 克隆 `ProcessRunner` 与分支 service 无调用或状态共享；app 仍是唯一组合根。
+
+### ARCH-008：最终成功事件与系统通知能力分离
+
+- MainWindow 只根据最终 `CloneController::Outcome::Completed|Failed` 各发一次相应通知请求，不创建 `QSystemTrayIcon`，Cancelled 不发请求。
+- `DesktopNotifier` 位于 presentation，只依赖 QtWidgets，负责 capability check、匹配应用视觉的通知图标、`showMessage` 和延时隐藏；不访问 controller/store/request。
+- `src/app/main.cpp` 是唯一连接通知请求与具体 notifier 的组合根；通知失败不得反向改变任务状态。
+
 ## 构建与交付结构
 
 ### BUILD-001：现有 target 分层保持不变
@@ -236,6 +303,19 @@ flowchart LR
 - 部署工具缺失时 Apple 配置必须给出明确 fatal 诊断，禁止静默产出伪自包含安装树。
 - 非 Apple 平台不执行此部署脚本，现有 `WIN32`/普通 executable 入口保持不变。
 
+### BUILD-006：分支查询与交互测试所有权
+
+- `git_clone_application` 新增 branch service 契约；仍只依赖 core/QtCore。
+- `git_clone_infrastructure` 新增 Git branch adapter；继续只依赖 application/QtCore，不新增 target 边。
+- `git_clone_presentation` 新增 `BranchSelector`；继续依赖 application/core/QtWidgets。
+- `test_git_remote_branches` 使用本地临时 Git 仓库验证解析、默认/常用排序、并发与错误；`test_presentation` 验证可编辑、包含匹配、过期结果和 splitter/页内状态。
+
+### BUILD-007：桌面通知保持在 presentation/app 边界
+
+- `git_clone_presentation` 新增 `DesktopNotifier`，沿用既有 QtWidgets 依赖；MainWindow 新增携带 title、message 与 `NotificationSeverity` 的通知信号。
+- `GitCloneGui` 组合根只实例化 notifier 并连接信号，不引入平台 shell、额外 framework 或新 target 边。
+- `test_presentation` 验证 Completed/Failed 各恰好一次对应通知且 Cancelled 零次；系统权限/通知中心展示作为 macOS 人工补充，不在测试中实际弹通知。
+
 ## 平台与交付矩阵
 
 | 目标平台/架构 | 开发构建物 | 安装产物 | 发布包 | 运行时依赖 | 原生验证 |
@@ -255,6 +335,7 @@ flowchart LR
 | 维度 | 当前基线 | 边界/触发条件 | 触发后动作 | 验证 |
 |---|---|---|---|---|
 | MainWindow | 旧版 303 行、同时构建单子表单 | 单文件超过约 420 行或出现单卡字段细节 | 布局拆到 MainWindowUi，单卡保留独立组件 | inspect_structure + 职责审查 |
+| BranchSelector | 新组件 | 解析 Git 输出、管理多 URL 或访问 CloneController | 分别留在 infrastructure/MainWindow | include/API 审查 |
 | Child card | 新组件 | 访问 controller/store 或负责列表 | 上移 MainWindow | include/API 审查 |
 | Controller | 190 行 | 队列策略与 runner I/O 混合或出现并行 | 提取 queue policy | 状态机测试 |
 | Store | 新适配器 | QSettings 泄漏到 presentation/application | 保持 port/adapter | include 扫描 |
@@ -270,6 +351,8 @@ flowchart LR
 | `ConfigurationStore::load` | 无 | `optional<CloneRequest>` | 无配置/不可读返回 nullopt | C++17 |
 | `ConfigurationStore::save` | CloneRequest | bool | sync 错误 false | C++17 |
 | `ChildRepositoryCard` | child value/index | value、configurationChanged、removeRequested | 不自行校验全局路径 | QtWidgets 5.15/6 |
+| `RemoteBranchService::requestBranches` | 仓库 URL | request ID；异步 catalog/error | 15 秒超时、取消/过期可忽略 | QtCore 5.15/6 |
+| `BranchSelector` | URL + 可选初始分支 | branch text、下拉 suggestions | 查询失败仍可手输 | QtWidgets 5.15/6 |
 
 ## 数据模型与状态
 
@@ -328,6 +411,21 @@ sequenceDiagram
     C-->>W: completed(count, path)
 ```
 
+```mermaid
+sequenceDiagram
+    participant U as URL Edit
+    participant B as BranchSelector
+    participant S as RemoteBranchService
+    participant G as git ls-remote
+    U->>B: textChanged(url)
+    B->>B: debounce 450ms / cancel stale
+    B->>S: requestBranches(url)
+    S->>G: --symref URL HEAD refs/heads/*
+    G-->>S: HEAD + heads
+    S-->>B: catalog(requestId)
+    B->>B: apply only current request; preserve typed text
+```
+
 ## 算法与伪代码
 
 ```text
@@ -355,6 +453,8 @@ save debounce:
 | 任一 Git 阶段 | runner events | 停止队列 | 父或子 i/N + 错误 | 保留文件 |
 | 设置不可写 | save=false | 不阻塞 | 状态区提示 | 当前会话继续、后续重试 |
 | 旧/无 schema | load nullopt | 首次默认 1 张空卡 | 无错误 | 用户填写 |
+| 远程分支查询失败/超时 | QProcess exit/error/timer | 释放请求、发非阻塞 error | selector tooltip/error property | 保持手工输入、URL 变化可重试 |
+| 目标目录为文件或非空目录 | core 校验 | 不启动 | “父项目目标目录必须为空” | 更改目录名或清空目录（用户自行处理） |
 
 ## 非功能设计
 
@@ -363,6 +463,8 @@ save debounce:
 - 可观测性：状态显示子项 i/N；预览展示所有命令；错误摘要压缩。
 - 视觉：#F5F7FB 背景、#FFFFFF 卡片、#2563EB 主色、#DC2626 危险色、12px 圆角、清晰焦点环；字体使用系统默认，命令/日志用等宽字体。
 - 兼容性：不依赖 macOS 私有 API；QSettings 使用 NativeFormat，测试使用 IniFormat 临时文件。
+- 远程查询：450ms debounce、15 秒超时、`GIT_TERMINAL_PROMPT=0`、每 URL 会话缓存；只传结构化参数，不记录 URL/refs 到日志。
+- 结果/日志：任务结束后的状态卡优先保持到下一次配置编辑；纵向 splitter 默认分配日志不少于 280px，用户可拖动。
 
 ## 正确性属性
 
@@ -414,6 +516,36 @@ save debounce:
 - 属性：从源 SVG 生成的 1024 PNG 以及从 Bundle `.icns` 反解出的最大尺寸图像均为 RGBA，四个角像素 alpha 等于 0；不得出现不透明白色画布。
 - 验证：`sips -g hasAlpha` 与图像像素 alpha 断言、Dock/Finder 人工检查。
 
+### PROP-009：分支建议始终属于当前 URL 请求
+
+- 来源：REQ-009 / AC-009.1、AC-009.4、AC-009.5。
+- 属性：对于任意交错完成的 URL 查询序列，BranchSelector 只应用其最后一个 URL 对应的当前 request ID；失败或过期结果不改变用户已输入分支文本。
+- 验证：fake service 乱序完成测试与本地 Git 并发查询测试。
+
+### PROP-010：目标目录校验与 Git 空目录能力一致
+
+- 来源：REQ-010 / AC-010.1。
+- 属性：父目标不存在或为空目录时计划有效；同一路径为文件或包含任意可见/隐藏条目的目录时计划无效且错误包含“必须为空”。
+- 验证：临时目录表驱动 core 测试。
+
+### PROP-011：任务结果不会被同一完成事件的重新校验覆盖
+
+- 来源：REQ-010 / AC-010.2、AC-010.3。
+- 属性：Completed/Failed 到达后状态卡分别保持 success/error 与任务消息，直到用户修改配置或启动新任务；日志内容不清空。
+- 验证：presentation 信号驱动测试与 snapshot 人工检查。
+
+### PROP-012：分支选择器不暴露平台原生直角边框
+
+- 来源：REQ-006 / AC-006.3，REQ-009 / AC-009.6。
+- 属性：任意正常、悬停、聚焦、禁用与 popup 展开状态下，BranchSelector 的折叠外框由同一 8px 圆角路径绘制；右侧只有浅分隔线和 chevron，不出现独立黑色矩形边框，popup 可见时 chevron 翻转。
+- 验证：selector paint/state 测试与默认窗口 snapshot 人工检查。
+
+### PROP-013：结果通知与最终成功/失败一一对应
+
+- 来源：REQ-010 / AC-010.5，NFR-009。
+- 属性：任意克隆状态序列中，每个最终 Completed 恰好产生一个 Information 完成通知请求，每个最终 Failed 恰好产生一个 Critical 失败通知请求；Cancelled、父阶段成功和中间子阶段成功产生零个通知。notifier capability 失败不改变结果或页内状态。
+- 验证：presentation 的可控 runner 完成/失败/取消信号计数和标题/级别测试，以及 notifier capability 代码审查。
+
 ## 测试策略
 
 | 行为/属性 | 层级 | 场景 | 证据 |
@@ -425,6 +557,8 @@ save debounce:
 | REQ-002,004 | integration/delivery | 父+2 子真实 clone、preset、bundle、launch | CTest + delivery script |
 | REQ-008 / PROP-007 | app/delivery | plist/icon、Framework/plugin、无开发 Qt 绝对依赖、安装幂等、launch | `plutil` + `find` + `otool` + self-contained delivery |
 | REQ-008 / PROP-008 | app/resource | RGBA、四角透明、Bundle icns 反解 | alpha 像素断言 + Dock/Finder 检查 |
+| REQ-009 / PROP-009 | infrastructure/presentation | 本地 refs、默认/常用排序、并发、错误、可编辑包含匹配 | `test_git_remote_branches` + `test_presentation` |
+| REQ-010 / PROP-010,011,013 | core/presentation | 空/非空/文件、页内成功失败、splitter 默认日志高度、最终成功/失败通知次数与取消零通知 | core/UI tests + snapshot |
 
 ## 需求覆盖矩阵
 
@@ -438,6 +572,8 @@ save debounce:
 | REQ-006 | MainWindow/QSS | ARCH-004, ARCH-006 | DEC-007 | PROP-006 | snapshot/人工 |
 | REQ-007 | ConfigurationStore/QSettings | ARCH-005 | DEC-006 | PROP-005 | store/UI |
 | REQ-008 | app CMake/resources/install script | BUILD-003, BUILD-005 | DEC-008,009 | PROP-007,008 | icon alpha/bundle/self-contained delivery/launch |
+| REQ-009 | RemoteBranchService/GitRemoteBranchService/BranchSelector | ARCH-007, BUILD-006 | DEC-010,011 | PROP-009,012 | infrastructure/presentation/snapshot |
+| REQ-010 | CloneRequest/MainWindow/MainWindowUi/DesktopNotifier | ARCH-002, ARCH-004, ARCH-006, ARCH-008 | DEC-012,013 | PROP-010,011,013 | core/presentation/snapshot/notification signal |
 
 ## 风险与未决问题
 
@@ -447,4 +583,6 @@ save debounce:
 - RISK-004：自包含 Bundle 体积会从 KB 级增加到数十 MB；这是 Framework/plugin 闭包的预期代价。
 - RISK-005：未签名、未公证仍可能触发其他 Mac 的 Gatekeeper；本轮只验证本机原生启动并明确该限制。
 - RISK-006：Quick Look 等 thumbnail 工具可能把透明 SVG 合成到白色画布；图标生成禁止使用该中间结果并以像素 alpha 断言防回归。
+- RISK-007：通用 `ls-remote` 无提交时间，分支“活跃”只能以默认/常用工作流启发式表达；UI 文案使用“默认与常用优先”。
+- RISK-008：私有远端可能依赖交互式认证；查询进程禁止终端提示并超时，用户仍可手工输入，实际 clone 沿用原凭据流程。
 - 无阻塞设计问题。

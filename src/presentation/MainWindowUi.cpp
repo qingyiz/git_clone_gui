@@ -1,6 +1,7 @@
 #include "presentation/MainWindow.h"
 
 #include "presentation/AppStyle.h"
+#include "presentation/BranchSelector.h"
 
 #include <QFrame>
 #include <QGridLayout>
@@ -11,6 +12,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSplitter>
 #include <QTextDocument>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -135,9 +137,25 @@ void MainWindow::createUi()
     executionLayout->setContentsMargins(16, 16, 16, 16);
     executionLayout->setSpacing(12);
     executionLayout->addWidget(sectionTitle(QStringLiteral("执行中心"), executionPanel));
-    executionLayout->addWidget(createPreviewCard(executionPanel));
-    executionLayout->addWidget(createStatusCard(executionPanel));
-    executionLayout->addWidget(createLogCard(executionPanel), 1);
+    m_executionSplitter = new QSplitter(Qt::Vertical, executionPanel);
+    m_executionSplitter->setObjectName(QStringLiteral("executionSplitter"));
+    m_executionSplitter->setChildrenCollapsible(false);
+    m_executionSplitter->setHandleWidth(8);
+    auto *summaryContainer = new QWidget(m_executionSplitter);
+    summaryContainer->setObjectName(QStringLiteral("executionSummaryContainer"));
+    auto *summaryLayout = new QVBoxLayout(summaryContainer);
+    summaryLayout->setContentsMargins(0, 0, 0, 0);
+    summaryLayout->setSpacing(12);
+    summaryLayout->addWidget(createPreviewCard(summaryContainer));
+    summaryLayout->addWidget(createStatusCard(summaryContainer));
+    QFrame *logCard = createLogCard(m_executionSplitter);
+    logCard->setMinimumHeight(280);
+    m_executionSplitter->addWidget(summaryContainer);
+    m_executionSplitter->addWidget(logCard);
+    m_executionSplitter->setStretchFactor(0, 0);
+    m_executionSplitter->setStretchFactor(1, 1);
+    m_executionSplitter->setSizes({210, 420});
+    executionLayout->addWidget(m_executionSplitter, 1);
     auto *buttonLayout = new QHBoxLayout;
     buttonLayout->addStretch(1);
     m_cancelButton = new QPushButton(QStringLiteral("取消"), executionPanel);
@@ -165,17 +183,17 @@ QFrame *MainWindow::createParentCard(QWidget *parent)
     m_parentRepositoryEdit = new QLineEdit(card);
     m_parentRepositoryEdit->setObjectName(QStringLiteral("parentRepositoryUrlEdit"));
     m_parentRepositoryEdit->setPlaceholderText(QStringLiteral("git@github.com:team/parent.git"));
-    m_parentBranchEdit = new QLineEdit(card);
-    m_parentBranchEdit->setObjectName(QStringLiteral("parentBranchEdit"));
-    m_parentBranchEdit->setPlaceholderText(QStringLiteral("main / feature/..."));
+    m_parentBranchSelector = new BranchSelector(m_branchService, card);
+    m_parentBranchSelector->setObjectName(QStringLiteral("parentBranchSelector"));
+    m_parentBranchSelector->setEditorObjectName(QStringLiteral("parentBranchEdit"));
     m_parentDirectoryEdit = new QLineEdit(card);
     m_parentDirectoryEdit->setObjectName(QStringLiteral("parentDirectoryEdit"));
     m_parentDirectoryEdit->setPlaceholderText(QStringLiteral("parent-project"));
     layout->addWidget(fieldLabel(QStringLiteral("仓库 URL"), card), 1, 0, 1, 2);
     layout->addWidget(m_parentRepositoryEdit, 2, 0, 1, 2);
-    layout->addWidget(fieldLabel(QStringLiteral("分支"), card), 3, 0);
+    layout->addWidget(fieldLabel(QStringLiteral("分支（可选择/搜索）"), card), 3, 0);
     layout->addWidget(fieldLabel(QStringLiteral("项目目录名"), card), 3, 1);
-    layout->addWidget(m_parentBranchEdit, 4, 0);
+    layout->addWidget(m_parentBranchSelector, 4, 0);
     layout->addWidget(m_parentDirectoryEdit, 4, 1);
     return card;
 }
@@ -216,33 +234,34 @@ QFrame *MainWindow::createPreviewCard(QWidget *parent)
     m_previewEdit->setObjectName(QStringLiteral("commandPreviewEdit"));
     m_previewEdit->setReadOnly(true);
     m_previewEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
-    m_previewEdit->setMinimumHeight(120);
-    m_previewEdit->setMaximumHeight(170);
+    m_previewEdit->setMinimumHeight(90);
+    m_previewEdit->setMaximumHeight(125);
     layout->addWidget(m_previewEdit);
     return card;
 }
 
 QFrame *MainWindow::createStatusCard(QWidget *parent)
 {
-    auto *card = new QFrame(parent);
-    card->setObjectName(QStringLiteral("statusCard"));
-    card->setProperty("role", QStringLiteral("statusCard"));
-    auto *layout = new QVBoxLayout(card);
+    m_statusCard = new QFrame(parent);
+    m_statusCard->setObjectName(QStringLiteral("statusCard"));
+    m_statusCard->setProperty("role", QStringLiteral("statusCard"));
+    m_statusCard->setProperty("statusState", QStringLiteral("normal"));
+    auto *layout = new QVBoxLayout(m_statusCard);
     layout->setContentsMargins(16, 13, 16, 14);
     layout->setSpacing(7);
-    m_validationLabel = new QLabel(card);
+    m_validationLabel = new QLabel(m_statusCard);
     m_validationLabel->setObjectName(QStringLiteral("validationSummary"));
     m_validationLabel->setWordWrap(true);
     layout->addWidget(m_validationLabel);
-    m_statusLabel = new QLabel(QStringLiteral("等待配置任务"), card);
+    m_statusLabel = new QLabel(QStringLiteral("等待配置任务"), m_statusCard);
     m_statusLabel->setObjectName(QStringLiteral("statusLabel"));
     m_statusLabel->setProperty("role", QStringLiteral("muted"));
     m_statusLabel->setWordWrap(true);
     layout->addWidget(m_statusLabel);
-    m_progressBar = new QProgressBar(card);
+    m_progressBar = new QProgressBar(m_statusCard);
     m_progressBar->setTextVisible(false);
     layout->addWidget(m_progressBar);
-    return card;
+    return m_statusCard;
 }
 
 QFrame *MainWindow::createLogCard(QWidget *parent)

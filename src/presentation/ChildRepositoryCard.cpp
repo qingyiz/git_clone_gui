@@ -1,5 +1,7 @@
 #include "presentation/ChildRepositoryCard.h"
 
+#include "presentation/BranchSelector.h"
+
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -11,12 +13,19 @@
 namespace gitclone {
 
 ChildRepositoryCard::ChildRepositoryCard(int index, QWidget *parent)
+    : ChildRepositoryCard(index, nullptr, parent)
+{
+}
+
+ChildRepositoryCard::ChildRepositoryCard(int index,
+                                         RemoteBranchService *branchService,
+                                         QWidget *parent)
     : QFrame(parent)
     , m_index(index)
 {
     setObjectName(QStringLiteral("childRepositoryCard"));
     setProperty("role", QStringLiteral("card"));
-    createUi();
+    createUi(branchService);
     updateTitle();
 }
 
@@ -36,28 +45,29 @@ void ChildRepositoryCard::setIndex(int index)
 
 ChildRepositoryRequest ChildRepositoryCard::configuration() const
 {
-    return {m_repositoryEdit->text(), m_branchEdit->text(), m_pathEdit->text()};
+    return {m_repositoryEdit->text(), m_branchSelector->branchText(), m_pathEdit->text()};
 }
 
 void ChildRepositoryCard::setConfiguration(const ChildRepositoryRequest &configuration)
 {
     const QSignalBlocker repositoryBlocker(m_repositoryEdit);
-    const QSignalBlocker branchBlocker(m_branchEdit);
+    const QSignalBlocker branchBlocker(m_branchSelector);
     const QSignalBlocker pathBlocker(m_pathEdit);
     m_repositoryEdit->setText(configuration.repositoryUrl);
-    m_branchEdit->setText(configuration.branch);
+    m_branchSelector->setBranchText(configuration.branch);
+    m_branchSelector->setRepositoryUrl(configuration.repositoryUrl);
     m_pathEdit->setText(configuration.relativePath);
 }
 
 void ChildRepositoryCard::setEditable(bool editable)
 {
     m_repositoryEdit->setEnabled(editable);
-    m_branchEdit->setEnabled(editable);
+    m_branchSelector->setEnabled(editable);
     m_pathEdit->setEnabled(editable);
     m_removeButton->setEnabled(editable);
 }
 
-void ChildRepositoryCard::createUi()
+void ChildRepositoryCard::createUi(RemoteBranchService *branchService)
 {
     auto *rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(18, 16, 18, 18);
@@ -95,28 +105,32 @@ void ChildRepositoryCard::createUi()
     m_repositoryEdit = new QLineEdit(this);
     m_repositoryEdit->setObjectName(QStringLiteral("childRepositoryUrlEdit"));
     m_repositoryEdit->setPlaceholderText(QStringLiteral("git@github.com:team/repository.git"));
-    m_branchEdit = new QLineEdit(this);
-    m_branchEdit->setObjectName(QStringLiteral("childBranchEdit"));
-    m_branchEdit->setPlaceholderText(QStringLiteral("main / develop / feature/..."));
+    m_branchSelector = new BranchSelector(branchService, this);
+    m_branchSelector->setObjectName(QStringLiteral("childBranchSelector"));
+    m_branchSelector->setEditorObjectName(QStringLiteral("childBranchEdit"));
     m_pathEdit = new QLineEdit(this);
     m_pathEdit->setObjectName(QStringLiteral("childRelativePathEdit"));
     m_pathEdit->setPlaceholderText(QStringLiteral("modules/repository"));
 
-    auto addField = [this, fieldsLayout](int row, const QString &label, QLineEdit *edit) {
+    auto addField = [this, fieldsLayout](int row, const QString &label, QWidget *edit) {
         auto *fieldLabel = new QLabel(label, this);
         fieldLabel->setProperty("role", QStringLiteral("fieldLabel"));
         fieldsLayout->addWidget(fieldLabel, row, 0);
         fieldsLayout->addWidget(edit, row + 1, 0);
     };
     addField(0, QStringLiteral("仓库 URL"), m_repositoryEdit);
-    addField(2, QStringLiteral("分支"), m_branchEdit);
+    addField(2, QStringLiteral("分支（输入 URL 后可选择/搜索）"), m_branchSelector);
     addField(4, QStringLiteral("父项目内路径"), m_pathEdit);
     rootLayout->addLayout(fieldsLayout);
 
-    const QList<QLineEdit *> edits {m_repositoryEdit, m_branchEdit, m_pathEdit};
+    const QList<QLineEdit *> edits {m_repositoryEdit, m_pathEdit};
     for (QLineEdit *edit : edits) {
         connect(edit, &QLineEdit::textChanged, this, &ChildRepositoryCard::configurationChanged);
     }
+    connect(m_repositoryEdit, &QLineEdit::textChanged,
+            m_branchSelector, &BranchSelector::setRepositoryUrl);
+    connect(m_branchSelector, &BranchSelector::branchChanged,
+            this, &ChildRepositoryCard::configurationChanged);
     connect(m_removeButton, &QPushButton::clicked, this, [this] {
         emit removeRequested(this);
     });

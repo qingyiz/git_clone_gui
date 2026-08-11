@@ -1,6 +1,8 @@
 add_library(git_clone_infrastructure STATIC
     GitProcessRunner.cpp
     GitProcessRunner.h
+    GitRemoteBranchService.cpp
+    GitRemoteBranchService.h
     QSettingsConfigurationStore.cpp
     QSettingsConfigurationStore.h
 )

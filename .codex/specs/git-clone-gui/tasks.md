@@ -225,6 +225,81 @@
   - 验证：基图 `hasAlpha=yes`；四角 alpha=0；反解 Bundle `.icns` 后重复 alpha 检查；Release build/install、self-contained delivery 与启动回归。
   - 实施记录：根因确认为 Quick Look thumbnail 把透明 SVG 合成到白色画布。改用 macOS `sips` 从原 SVG 直接生成 1024×1024 RGBA PNG，再派生 10 个标准尺寸并重建 `.icns`；SVG 构图、C++ 和部署逻辑均未修改。基图与最终安装 Bundle `.icns` 反解图均为 `hasAlpha=yes`，Swift 像素断言确认四角 alpha 为 `[0.0, 0.0, 0.0, 0.0]`。Release 全量 CTest 5/5、自包含 delivery、重新安装和 `open -n` 启动回归均通过。
 
+- [x] TASK-015：实现独立的远程分支查询服务
+  - 类型：required
+  - 需求：REQ-009
+  - 设计：DEC-010；ARCH-001、ARCH-007；BUILD-001、BUILD-006；PROP-009
+  - 单一变更原因：建立不占用克隆 runner 的异步远程 refs 查询契约与 Git 适配器。
+  - 模块/构建单元：主要 `git_clone_infrastructure`；契约位于 `git_clone_application`；测试 `test_git_remote_branches`。
+  - 架构约束：ARCH-001、ARCH-007 / BUILD-001、BUILD-006；application 不依赖 QProcess/Widgets；infrastructure 只负责查询、解析、排序、缓存和超时，不修改工作树或克隆状态。
+  - 依赖变化：application 新增 branch service QtCore 契约；infrastructure 保持 `-> application + Qt::Core`；新增测试边，无生产 target 新 link 边。
+  - 平台/交付物：平台无关 QtCore 服务，不单独产生用户交付物；在 macOS arm64 原生测试。
+  - 依赖：TASK-014。
+  - 修改范围：`src/application/RemoteBranchService.*`、`src/infrastructure/GitRemoteBranchService.*`、对应 CMake、`tests/infrastructure/TestGitRemoteBranchService.cpp`；不改窗口、克隆 controller 或配置格式。
+  - 产出：request/cancel、15 秒超时、`GIT_TERMINAL_PROMPT=0`、会话缓存、HEAD/heads 解析和默认/常用排序。
+  - 验证：本地临时 Git 仓库的 default/多分支查询、并发/取消/无效 URL；静态确认结构化 `QProcess::start` 且无 shell。
+  - 实施记录：新增 `RemoteBranchService` port 与 `GitRemoteBranchService` adapter；每个请求使用独立 QProcess、结构化 `ls-remote --symref` 参数、15 秒超时、禁用终端提示、请求取消、URL 会话缓存和隐私友好的通用错误。解析 HEAD/heads 后按默认、常用 exact/namespace、稳定名称排序。新增本地临时 Git 仓库测试，覆盖 5 分支默认/排序、缓存与无效 URL，CTest `git_remote_branches` 1/1 通过；shell API 扫描无命中。
+
+- [x] TASK-016：把父子分支输入升级为可搜索选择器
+  - 类型：required
+  - 需求：REQ-009、REQ-001、REQ-005、REQ-007
+  - 设计：DEC-011；ARCH-004、ARCH-007；BUILD-004、BUILD-006；PROP-005、PROP-006、PROP-009
+  - 单一变更原因：让父项目和每张子卡片复用可编辑、URL 驱动、包含式搜索的分支控件。
+  - 模块/构建单元：主要 `git_clone_presentation`；组合 target `GitCloneGui`。
+  - 架构约束：ARCH-004、ARCH-007 / BUILD-004、BUILD-006；BranchSelector 只依赖 application port，不解析 Git 输出；MainWindow/Card 保持各自页面/单卡职责；app 注入具体 service。
+  - 依赖变化：presentation 继续 `-> application/core/Qt::Widgets`；app 组合新增 branch service，无新跨层 link 边。
+  - 平台/交付物：macOS arm64 `build/debug/bin/GitCloneGui.app`；不改变 Bundle 结构。
+  - 依赖：TASK-015。
+  - 修改范围：`src/presentation/BranchSelector.*`、`ChildRepositoryCard.*`、`MainWindow*`、`AppStyle.cpp`、`src/app/main.cpp`、相关 CMake/tests；不改 clone 命令或 QSettings schema。
+  - 产出：450ms debounce、editable combo、默认/常用优先下拉、`MatchContains` popup、手工输入保持、过期结果隔离、运行时禁用。
+  - 验证：presentation tests 覆盖父/子 URL 查询、结果选择、包含匹配、乱序/失败保持输入、配置往返；Debug 构建与启动。
+  - 实施记录：新增 `BranchSelector` 可编辑 QComboBox，提供 450ms URL debounce、默认/常用优先下拉、`QCompleter` 不区分大小写包含匹配、loading/error tooltip 和请求 ID 过期隔离；URL 变化会清除旧 suggestions 但保留手输文本，空分支时自动采用远程 default。父项目与 `ChildRepositoryCard` 均已复用组件，app 注入独立 service，运行时随配置禁用；QSettings 数据模型/schema 未改。新增 default/搜索、乱序/手输保持、子卡 URL 查询测试，presentation/branch/store 相关 CTest 3/3 通过，presentation 无 QProcess/infrastructure include。
+
+- [x] TASK-017：优化目标目录、页内结果与日志布局
+  - 类型：required
+  - 需求：REQ-003、REQ-006、REQ-010、REQ-004
+  - 设计：DEC-012；ARCH-002、ARCH-004、ARCH-006；BUILD-003、BUILD-004；PROP-010、PROP-011
+  - 单一变更原因：修正目标目录语义并让任务结果和大段 Git 输出保持清晰可查。
+  - 模块/构建单元：`git_clone_core` 与 `git_clone_presentation` 两个受影响构建单元；这是同一用户反馈链的校验/状态/布局竖切。
+  - 架构约束：ARCH-002、ARCH-004、ARCH-006 / BUILD-003、BUILD-004；目录不变量仍归 core；页内状态和 splitter 只归 presentation；不引入自动清理或文件操作适配器。
+  - 依赖变化：无新增 include/link/target 边。
+  - 平台/交付物：Debug/Release 与安装树 macOS arm64 `.app`，形态不变。
+  - 依赖：TASK-016。
+  - 修改范围：`src/core/CloneRequest.cpp`、`src/presentation/MainWindow.*`/`MainWindowUi.cpp`/`AppStyle.cpp`、core/presentation tests、`README.md`、Spec 实施记录；不改 controller 状态机或部署脚本。
+  - 产出：空目录可用/非空明确错误、无 QMessageBox 的 success/error 状态、结果优先保持、纵向 splitter 与默认至少 280px 日志区。
+  - 验证：core 空/隐藏文件/普通文件测试；presentation success/failure、无 QMessageBox、splitter/日志高度与 snapshot；Debug/Release 全 CTest、自包含 install/delivery、launch。
+  - 实施记录：core 现允许不存在或已存在空父目标，拒绝普通文件以及含隐藏/系统项的非空目录，错误统一包含“父项目目标目录必须为空”；新增三类回归测试。MainWindow 移除完成/失败 QMessageBox，以 success/error 页内状态卡保留任务消息，并验证完成后的非空目录重新校验不会覆盖成功结果。右侧新增纵向 QSplitter，日志卡最小 280px、默认占主要空间、仍为 NoWrap/10,000 blocks；最终 1160×780 snapshot 已人工检查。README 已说明远程分支口径、空目录和新反馈。Debug/Release 全 CTest 均 6/6，自包含 install delivery 通过（Frameworks、Cocoa plugin、RPATH、Bundle 元数据），安装主程序实际启动后正常响应终止；inspect_structure 显示 MainWindow 361 行，未越过约 420 行预算。
+
+- [x] TASK-018：重绘分支选择器折叠外观
+  - 类型：required
+  - 需求：REQ-006、REQ-009
+  - 设计：DEC-011；ARCH-004、ARCH-006、ARCH-007；BUILD-004、BUILD-006；PROP-012
+  - 单一变更原因：消除 macOS 原生 QComboBox 子控件叠加产生的黑色直角边框，使父/子分支框与现有输入视觉一致。
+  - 模块/构建单元：`git_clone_presentation` 与 `test_presentation`。
+  - 架构约束：ARCH-004、ARCH-006、ARCH-007 / BUILD-004、BUILD-006；只改 BranchSelector paint/state 与相关样式，不修改远程查询、配置模型或 clone 流程。
+  - 依赖变化：无新增 include/link/target 边；仅新增 QtGui paint API include。
+  - 平台/交付物：macOS arm64 `build/debug/bin/GitCloneGui.app` 与安装树 `.app`，Bundle 形态不变。
+  - 依赖：TASK-017。
+  - 修改范围：`src/presentation/BranchSelector.*`、`AppStyle.cpp`、`tests/presentation/TestPresentation.cpp`、Spec 实施记录；不改 application/infrastructure/core。
+  - 产出：统一 8px 圆角外框、无黑色直角子框、浅分隔线、hover/focus/disabled/loading/error 色和 popup 展开箭头翻转。
+  - 验证：presentation tests；1160×780 snapshot 与用户截图对照；Debug/Release 全 CTest；安装树 self-contained delivery 与启动回归。
+  - 实施记录：`BranchSelector` 已覆盖 QComboBox 折叠态 paint，使用单一 8px 圆角路径绘制背景和 1/1.5px 边框，右侧只保留浅色分隔线与 1.8px 圆头 chevron；normal/hover/focus/disabled/loading/error 均有独立色值，popup 展开时箭头翻转。未改 branch service、model、配置或 clone 流程。新增右边缘暗色像素断言与展开状态测试，presentation CTest 通过；1160×780 snapshot 与用户截图对照确认原生黑色直角框已消失。Debug/Release 全 CTest 均 6/6，自包含 install delivery、Framework/plugin/RPATH 检查和安装主程序启动回归通过；inspect_structure 显示 BranchSelector 253 行，仍只承担单分支输入交互/视觉职责，依赖边不变。
+
+- [x] TASK-019：为最终克隆结果增加系统通知
+  - 类型：required
+  - 需求：REQ-010
+  - 设计：DEC-013；ARCH-004、ARCH-008；BUILD-003、BUILD-004、BUILD-007；PROP-013
+  - 单一变更原因：在父/子 clone 流程最终成功或失败后增加一次对应的非阻塞系统消息，同时保留页内结果反馈。
+  - 模块/构建单元：主要 `git_clone_presentation`；组合 target `GitCloneGui` 与 `test_presentation`。
+  - 架构约束：ARCH-004、ARCH-008 / BUILD-003、BUILD-004、BUILD-007；MainWindow 只发请求，DesktopNotifier 独立封装 QSystemTrayIcon，app 组合；不得修改 controller outcome 或使用 shell。
+  - 依赖变化：presentation 沿用 QtWidgets 并新增 QSystemTrayIcon API；无新 target/link/package 边。
+  - 平台/交付物：macOS arm64 Debug/Release 与 `build/install/GitCloneGui.app`，Bundle 形态不变；系统展示受用户通知权限控制。
+  - 依赖：TASK-018。
+  - 修改范围：`src/presentation/DesktopNotifier.*`、`MainWindow.*`、presentation CMake/tests、`src/app/main.cpp`、README/Spec；不改 controller/core/infrastructure。
+  - 产出：最终 Completed/Failed 各一次对应通知、标题/正文/Information/Critical 级别、蓝色 G 图标、系统能力降级、12 秒自动隐藏 tray item；Cancelled 零通知。
+  - 验证：presentation Completed/Failed/Cancelled 信号计数、标题与级别；Debug/Release 全 CTest；install self-contained delivery；macOS 启动与人工通知检查（权限允许时）。
+  - 实施记录：新增 `NotificationSeverity` 与独立 `DesktopNotifier`，后者仅依赖 QtWidgets，使用蓝色 G 图标、`QSystemTrayIcon` capability check、Information/Critical 映射和 12 秒 tray item 自动隐藏；不支持系统消息时直接返回，不改变页内状态或 controller outcome。`MainWindow` 仅在最终 `Completed`/`Failed` 各发一次“GitCloneGui · 克隆完成/失败”请求，正文沿用 controller 最终消息（成功含父目录与子仓库数，失败含具体阶段与错误），`Cancelled` 不发；`src/app/main.cpp` 作为唯一组合根连接 notifier。presentation 新增成功/失败/取消计数、标题、正文和级别断言，均通过且不会在测试中实际弹通知。Debug/Release 全 CTest 均 6/6；自包含安装 Bundle 通过 Frameworks、Cocoa plugin、RPATH、Bundle 元数据检查，安装主程序可启动并保持事件循环。`inspect_structure` 显示 MainWindow 372 行，仍低于约 420 行预算；Notifier 67 行，未引入 application/core/infrastructure 反向依赖。系统最终是否展示仍由 macOS 通知权限决定，权限关闭时页内结果为可用降级路径。
+
 ## 执行波次
 
 | 波次 | 任务 | 并行性 | 完成后仓库状态 |
@@ -241,6 +316,11 @@
 | 10 | TASK-012 | 顺序 | 开发 Bundle 具备正式 macOS 图标 |
 | 11 | TASK-013 | 顺序 | 安装 Bundle 自包含 Qt 运行时并完成交付闭环 |
 | 12 | TASK-014 | 顺序 | Dock/Finder 图标无白色方底且交付回归通过 |
+| 13 | TASK-015 | 顺序 | 远程分支查询 port/adapter 可独立验证 |
+| 14 | TASK-016 | 顺序 | 父子分支均可选择、手输和搜索 |
+| 15 | TASK-017 | 顺序 | 目录、页内结果与大日志体验完成并交付回归 |
+| 16 | TASK-018 | 顺序 | 分支选择器无原生黑色直角边框且视觉回归通过 |
+| 17 | TASK-019 | 顺序 | 最终成功/失败各产生一次对应系统通知且取消不误报 |
 
 ## 覆盖检查
 
@@ -251,9 +331,11 @@
 | REQ-003 | TASK-002, TASK-003, TASK-007, TASK-010 | controller + UI | 已完成 |
 | REQ-004 | TASK-001, TASK-004, TASK-005, TASK-011 | Preset/CTest/bundle/README | 已完成 |
 | REQ-005 | TASK-009, TASK-010 | card/presentation tests | 已完成 |
-| REQ-006 | TASK-009, TASK-010, TASK-011 | snapshot + 人工检查 | 已完成 |
+| REQ-006 | TASK-009, TASK-010, TASK-011, TASK-018 | snapshot + 人工检查 | 已完成 |
 | REQ-007 | TASK-008, TASK-010, TASK-011 | store 往返 + UI 恢复 | 已完成 |
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
+| REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
+| REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
 
 ## 完成门槛
 
@@ -266,3 +348,7 @@
 - [x] REQ-008 / PROP-007 有 icon、依赖闭包与启动证据。
 - [x] 安装树 `.app` 通过 `--require-self-contained`，且 README 区分开发与部署产物。
 - [x] TASK-014 完成，图标基图与 Bundle `.icns` 的四角 alpha 均为 0。
+- [x] TASK-015～TASK-017 完成，REQ-009～REQ-010 与 PROP-009～PROP-011 均有证据。
+- [x] 分支查询、可搜索选择、空目录、页内结果和日志高度回归通过。
+- [x] TASK-018 完成，PROP-012 有自动化与 snapshot 证据。
+- [x] TASK-019 完成，PROP-013 与系统通知降级行为有证据。

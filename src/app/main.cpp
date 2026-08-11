@@ -1,6 +1,8 @@
 #include "application/CloneController.h"
 #include "infrastructure/GitProcessRunner.h"
+#include "infrastructure/GitRemoteBranchService.h"
 #include "infrastructure/QSettingsConfigurationStore.h"
+#include "presentation/DesktopNotifier.h"
 #include "presentation/MainWindow.h"
 
 #include <QApplication>
@@ -15,10 +17,16 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationDomain(QStringLiteral("mingr.tools"));
 
     gitclone::GitProcessRunner runner;
+    gitclone::GitRemoteBranchService branchService;
     gitclone::CloneController controller(&runner);
     gitclone::QSettingsConfigurationStore configurationStore(
         QCoreApplication::organizationName(), QCoreApplication::applicationName());
-    gitclone::MainWindow window(&controller, &configurationStore);
+    gitclone::DesktopNotifier desktopNotifier;
+    gitclone::MainWindow window(&controller, &configurationStore, &branchService, nullptr);
+    QObject::connect(&window,
+                     &gitclone::MainWindow::taskResultNotificationRequested,
+                     &desktopNotifier,
+                     &gitclone::DesktopNotifier::showMessage);
     window.show();
 
     return application.exec();
