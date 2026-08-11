@@ -330,7 +330,7 @@
   - 验证：YAML 解析/actionlint（可用时）、shell 语法、PowerShell parser、无 Secret 静态路径、本机 unsigned DMG/Bundle 回归、GitHub 双 runner run。
   - 实施记录：已新增固定 Action commit SHA 的双平台 workflow、macOS 临时 keychain/Developer ID/notarytool/staple 脚本、Windows PFX/signtool 和 portable ZIP 脚本；build jobs 为 contents read，tag-only release job 单独 contents write。Bash `-n`、Ruby YAML 与 actionlint 均通过；本机 Release 6/6 CTest、自包含 delivery、unsigned DMG 创建/挂载/arm64 结构和安装 app 启动均通过。PR #2 run `31506923442` 的 macOS arm64 与 Windows x64 jobs 均完成 Qt 6.8 Release、6/6 CTest、unsigned 降级、平台部署/打包和 artifact 上传；Windows/macOS artifact API 分别报告约 22.7/23.2 MB。真实签名公证按设计仍待 Secrets，不属于无凭据分支的完成声明。
 
-- [ ] TASK-022：补齐发布操作说明并闭环线上交付证据
+- [x] TASK-022：补齐发布操作说明并闭环线上交付证据
   - 类型：required
   - 需求：REQ-011
   - 设计：DEC-014；ARCH-009；BUILD-008；PROP-014、PROP-015
@@ -343,7 +343,7 @@
   - 修改范围：`README.md`、Spec 实施记录；仅在原生 run 发现问题时最小修复对应 workflow/CMake/script。
   - 产出：下载入口、手动/标签发版、Apple Developer ID + notarytool Secrets、Windows PFX Secrets、证书限制与排错说明。
   - 验证：README 命令/Secret 名与 workflow 一致；提交推送后的 macOS/Windows jobs、artifact 清单；测试标签 Release；有证书时签名工具验证。
-  - 实施记录：README 已补充 Release/Actions artifact 下载、Windows 本机构建、workflow 触发、标签发布、5 个 Apple Secrets、2 个 Windows Secrets、Developer ID 与 Apple Development 区别、PFX/云 HSM 限制及 unsigned 风险。文档与 workflow Secret 名一致；GitHub 线上 run/Release 仍需把本轮改动提交推送，任务暂不勾选。
+  - 实施记录：README 与 workflow 的触发命令、5 个 Apple Secrets 和 2 个 Windows Secrets 已核对一致。合并后普通 push run `31508314759` 在 macOS arm64/Windows x64 完成 Release 构建、6/6 CTest、自包含打包和两个 artifact 上传。首个标签 `v0.1.0` 暴露 release job 未 checkout 时 `gh` 无法推断仓库，PR #3 通过把 `GH_REPO` 设置为 Actions 当前仓库上下文完成最小修复并由双平台检查验证；标签 `v0.1.1` run `31510019384` 随后自动完成两个平台 job 与 `Publish GitHub Release` job。Release `v0.1.1` 已发布约 24.2 MB DMG 与 22.7 MB ZIP，GitHub API 报告两附件状态均为 `uploaded` 且带 SHA-256 digest。当前未配置签名 Secrets，因此本轮证据明确为 unsigned 降级；Developer ID/notary 与 Authenticode 真实证书路径保持条件式能力，不声明已验证。
 
 ## 执行波次
 
@@ -384,7 +384,7 @@
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
-| REQ-011 | TASK-020, TASK-021, TASK-022 | Windows/macOS Actions build/test/deploy、签名门控、artifact/Release | 执行中 |
+| REQ-011 | TASK-020, TASK-021, TASK-022 | Windows/macOS Actions build/test/deploy、签名门控、artifact/Release | 已完成 |
 
 ## 完成门槛
 
@@ -401,7 +401,7 @@
 - [x] 分支查询、可搜索选择、空目录、页内结果和日志高度回归通过。
 - [x] TASK-018 完成，PROP-012 有自动化与 snapshot 证据。
 - [x] TASK-019 完成，PROP-013 与系统通知降级行为有证据。
-- [ ] TASK-020～TASK-022 全部完成。
-- [ ] Windows x64 与 macOS arm64 GitHub runner 均完成 Release 构建、全 CTest 和自包含产物检查。
-- [ ] 普通 run 提供两个 artifact，测试 `v*` 标签提供包含 DMG/ZIP 的 GitHub Release。
-- [ ] 无 Secrets 的 unsigned 降级有明确证据；配置签名 Secrets 后，Developer ID/notary 或 Authenticode 路径按实际证书完成验证。
+- [x] TASK-020～TASK-022 全部完成。
+- [x] Windows x64 与 macOS arm64 GitHub runner 均完成 Release 构建、全 CTest 和自包含产物检查。
+- [x] 普通 run 提供两个 artifact，测试 `v*` 标签提供包含 DMG/ZIP 的 GitHub Release。
+- [x] 无 Secrets 的 unsigned 降级有明确证据；真实 Developer ID/notary 与 Authenticode 验证保持为配置对应 Secrets 后的条件式路径。
