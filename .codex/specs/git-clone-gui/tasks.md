@@ -300,7 +300,7 @@
   - 验证：presentation Completed/Failed/Cancelled 信号计数、标题与级别；Debug/Release 全 CTest；install self-contained delivery；macOS 启动与人工通知检查（权限允许时）。
   - 实施记录：新增 `NotificationSeverity` 与独立 `DesktopNotifier`，后者仅依赖 QtWidgets，使用蓝色 G 图标、`QSystemTrayIcon` capability check、Information/Critical 映射和 12 秒 tray item 自动隐藏；不支持系统消息时直接返回，不改变页内状态或 controller outcome。`MainWindow` 仅在最终 `Completed`/`Failed` 各发一次“GitCloneGui · 克隆完成/失败”请求，正文沿用 controller 最终消息（成功含父目录与子仓库数，失败含具体阶段与错误），`Cancelled` 不发；`src/app/main.cpp` 作为唯一组合根连接 notifier。presentation 新增成功/失败/取消计数、标题、正文和级别断言，均通过且不会在测试中实际弹通知。Debug/Release 全 CTest 均 6/6；自包含安装 Bundle 通过 Frameworks、Cocoa plugin、RPATH、Bundle 元数据检查，安装主程序可启动并保持事件循环。`inspect_structure` 显示 MainWindow 372 行，仍低于约 420 行预算；Notifier 67 行，未引入 application/core/infrastructure 反向依赖。系统最终是否展示仍由 macOS 通知权限决定，权限关闭时页内结果为可用降级路径。
 
-- [ ] TASK-020：补齐 Windows 原生 target 资源与自包含安装树
+- [x] TASK-020：补齐 Windows 原生 target 资源与自包含安装树
   - 类型：required
   - 需求：REQ-004、REQ-011
   - 设计：DEC-003、DEC-014；ARCH-002、ARCH-009；BUILD-003、BUILD-008；PROP-001、PROP-014
@@ -313,9 +313,9 @@
   - 修改范围：`cmake/CompilerWarnings.cmake`、`cmake/ConfigureAppDeployment.cmake`、`cmake/DeployWindows.cmake.in`、`src/app/CMakeLists.txt`、`src/app/resources/GitCloneGui.ico`、`src/app/WindowsResources.rc.in`；若 Windows 原生测试暴露平台路径差异，可最小修改 `src/core/CloneRequest.cpp` 及对应既有 core 回归，不改 application/infrastructure/presentation 行为。
   - 产出：正确的 APPLE/WIN32/其他平台 target 分支、Windows icon、同 Qt kit 的 `windeployqt` install-time 部署。
   - 验证：本机 CMake 静态/回归；`windows-2022` Release configure/build/CTest/install；断言 exe、Qt DLL、qwindows plugin、compiler runtime。
-  - 实施记录：已实现 APPLE/WIN32/其他平台 target 分支，新增 256×256 RGBA `.ico` 与配置生成的 Windows resource，MSVC 增加 `/utf-8`；部署配置抽到 59 行 `ConfigureAppDeployment.cmake`，Windows install script 使用同 Qt kit 的 `windeployqt` 并断言 qwindows plugin。本机 Debug/Release CMake 与 6/6 CTest 均通过，app CMake 保持 46 行且无业务依赖变化。首轮 Windows runner 已成功编译全部 target，但 core/controller/真实 Git 测试暴露 `cleanPath` 正斜杠与 `QDir::separator()` 反斜杠混合导致的合法路径逃逸误判；已在 core 内统一为 Qt 正斜杠并沿用 Windows case-folded identity，待第二轮 runner 验证。
+  - 实施记录：已实现 APPLE/WIN32/其他平台 target 分支，新增 256×256 RGBA `.ico` 与配置生成的 Windows resource，MSVC 增加 `/utf-8`；部署配置抽到 59 行 `ConfigureAppDeployment.cmake`，Windows install script 使用同 Qt kit 的 `windeployqt` 并断言 qwindows plugin。本机 Debug/Release CMake 与 6/6 CTest 均通过，app CMake 保持 46 行且无业务依赖变化。首轮 Windows runner 暴露 `cleanPath` 正斜杠与 `QDir::separator()` 反斜杠混合导致的合法路径逃逸误判；core 统一分隔符并沿用 Windows case-folded identity 后，run `31506923442` 在 Windows x64/Qt 6.8/MSVC 2022 成功编译、6/6 CTest、windeployqt、MSVC runtime 补齐、ZIP 结构断言和 artifact 上传。
 
-- [ ] TASK-021：实现 GitHub Actions 双平台打包与可选签名公证
+- [x] TASK-021：实现 GitHub Actions 双平台打包与可选签名公证
   - 类型：required
   - 需求：REQ-011
   - 设计：DEC-014；ARCH-009；BUILD-005、BUILD-008；PROP-014、PROP-015
@@ -328,7 +328,7 @@
   - 修改范围：`.github/workflows/release.yml`、`scripts/release/**`、`cmake/DeployMacOS.cmake.in`；不改 UI/克隆/配置代码。
   - 产出：macOS 证书临时 keychain 导入、`macdeployqt` notarization signing、DMG 生成/公证/staple；Windows PFX/signtool；artifact 与 tag Release 编排。
   - 验证：YAML 解析/actionlint（可用时）、shell 语法、PowerShell parser、无 Secret 静态路径、本机 unsigned DMG/Bundle 回归、GitHub 双 runner run。
-  - 实施记录：已新增固定 Action commit SHA 的双平台 workflow、macOS 临时 keychain/Developer ID/notarytool/staple 脚本、Windows PFX/signtool 和 portable ZIP 脚本；build jobs 为 contents read，tag-only release job 单独 contents write。Bash `-n`、Ruby YAML 与 actionlint 均通过；本机 Release 6/6 CTest、自包含 delivery、unsigned DMG 创建/挂载/arm64 结构和安装 app 启动均通过。PowerShell、Windows/Qt6 及真实签名公证仍待 GitHub runner/Secrets，任务暂不勾选。
+  - 实施记录：已新增固定 Action commit SHA 的双平台 workflow、macOS 临时 keychain/Developer ID/notarytool/staple 脚本、Windows PFX/signtool 和 portable ZIP 脚本；build jobs 为 contents read，tag-only release job 单独 contents write。Bash `-n`、Ruby YAML 与 actionlint 均通过；本机 Release 6/6 CTest、自包含 delivery、unsigned DMG 创建/挂载/arm64 结构和安装 app 启动均通过。PR #2 run `31506923442` 的 macOS arm64 与 Windows x64 jobs 均完成 Qt 6.8 Release、6/6 CTest、unsigned 降级、平台部署/打包和 artifact 上传；Windows/macOS artifact API 分别报告约 22.7/23.2 MB。真实签名公证按设计仍待 Secrets，不属于无凭据分支的完成声明。
 
 - [ ] TASK-022：补齐发布操作说明并闭环线上交付证据
   - 类型：required

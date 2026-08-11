@@ -31,6 +31,7 @@
 | FACT-017 | 用户要求从 GitHub 直接下载 GitHub 托管 runner 编译的 macOS/Windows 成品，并需要说明和实现 macOS 签名/公证、Windows 签名流程。 | 用户明确 | 2026-08-11 追加反馈 | 目标平台扩大为 macOS arm64 与 Windows x64，新增 Actions artifact、tag Release、可选签名和公证。 |
 | FACT-018 | 仓库为公开的 `qingyiz/git_clone_gui`，本地 `main` 与 `origin/main` 当前同位于 `6f002e2`，仓库尚无 `.github/workflows`。 | 已验证 | `git remote/status/log`、`gh repo view` | 可新增 GitHub Actions；现有未提交功能必须保留并随流水线一起提交后才会进入 GitHub 构建。 |
 | FACT-019 | 当前 Mac 仅有 Apple Development 身份，没有可用于站外分发公证的 Developer ID Application 身份；Windows 代码签名证书也未提供。 | 已验证/未知 | `security find-identity`、用户尚未提供证书 | 流水线必须在无凭据时生成明确标识的未签名测试包，在 Secrets 完整时签名/公证，不能伪造签名成功。 |
+| FACT-020 | PR #2 的 Actions run `31506923442` 已在 macOS arm64 与 Windows x64 上完成 Qt 6.8 Release 构建、6/6 CTest、部署、unsigned 打包和 artifact 上传。 | 已验证 | GitHub Actions job/step API、artifact API | Windows 源码编译与两平台 unsigned 交付路径已有原生证据；真实签名、公证与 tag Release 仍待凭据/标签。 |
 
 ### 技术与运行环境调查
 
@@ -42,7 +43,7 @@
 | macOS Bundle | `du`、`plutil`、`find`、`otool` | 524 KB、无图标资源、Qt 依赖仍为 `@rpath` 且未随包部署 | 新增 `.icns` 资源和独立部署阶段 |
 | Qt 部署工具 | `/Users/qingyizhu/Qt5.15.2/bin/macdeployqt -h` | 可复制 Qt Framework 与插件并改写依赖 | Release 安装树使用该 kit 对应工具部署 |
 | 远程分支能力 | Git 2.44.0 `ls-remote --symref` 与官方文档 | 可在不克隆对象的情况下读取 HEAD 与 `refs/heads/*`；提交日期不可用 | 使用默认/常用分支优先排序，查询失败时保留手工输入 |
-| GitHub/runner | `gh repo view`、GitHub-hosted runner 官方文档 | 公开仓库可使用 `windows-2022` x64 与 `macos-15` arm64 原生 runner | CI 在目标操作系统原生构建、测试和打包，不能用本机交叉编译代替 |
+| GitHub/runner | `gh repo view`、GitHub-hosted runner 官方文档、run `31506923442` | `windows-2022` x64 与 `macos-15` arm64 均成功完成 Qt 6.8 构建、6/6 CTest 和 artifact 上传 | CI 已在目标操作系统原生验证 unsigned 路径，不能用本机交叉编译替代签名/公证证据 |
 | 平台部署 | Qt 官方部署文档 | `windeployqt` 收集 Windows DLL/plugins/runtime；`macdeployqt` 收集 macOS frameworks/plugins 并支持 notarization signing options | 发布包必须在部署工具执行后再上传，不能只上传裸 `.exe` 或 build-tree `.app` |
 
 ## 问题与目标
