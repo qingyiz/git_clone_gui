@@ -345,7 +345,7 @@
   - 验证：README 命令/Secret 名与 workflow 一致；提交推送后的 macOS/Windows jobs、artifact 清单；测试标签 Release；有证书时签名工具验证。
   - 实施记录：README 与 workflow 的触发命令、5 个 Apple Secrets 和 2 个 Windows Secrets 已核对一致。合并后普通 push run `31508314759` 在 macOS arm64/Windows x64 完成 Release 构建、6/6 CTest、自包含打包和两个 artifact 上传。首个标签 `v0.1.0` 暴露 release job 未 checkout 时 `gh` 无法推断仓库，PR #3 通过把 `GH_REPO` 设置为 Actions 当前仓库上下文完成最小修复并由双平台检查验证；标签 `v0.1.1` run `31510019384` 随后自动完成两个平台 job 与 `Publish GitHub Release` job。Release `v0.1.1` 已发布约 24.2 MB DMG 与 22.7 MB ZIP，GitHub API 报告两附件状态均为 `uploaded` 且带 SHA-256 digest。当前未配置签名 Secrets，因此本轮证据明确为 unsigned 降级；Developer ID/notary 与 Authenticode 真实证书路径保持条件式能力，不声明已验证。
 
-- [ ] TASK-023：修复无 Developer ID 的 macOS Bundle 失效签名
+- [x] TASK-023：修复无 Developer ID 的 macOS Bundle 失效签名
   - 类型：required
   - 需求：REQ-011 / AC-011.3、AC-011.4；NFR-007
   - 设计：DEC-014、DEC-015；ARCH-009；BUILD-005、BUILD-008；PROP-014、PROP-015
@@ -358,7 +358,7 @@
   - 修改范围：`cmake/DeployMacOS.cmake.in`、`scripts/release/package-macos.sh`、`README.md` 与 Spec 证据；不改 `.github/workflows/release.yml`、C++/Qt 源码或 Windows 脚本。
   - 产出：无 Developer ID 时通过 `macdeployqt -codesign=-` 完整重签；打包前无条件严格验证 Bundle；README 区分“结构有效的 ad-hoc 测试包”和“Developer ID + 公证可信包”。
   - 验证：本机 Qt 5.15.2 全新 install、6/6 CTest、self-contained delivery、严格 `codesign`、DMG 挂载与启动；对带 quarantine 的副本确认不再出现签名损坏；GitHub macOS arm64/Qt 6.8 job 与新标签 Release 原生验证。
-  - 实施记录：待完成实现与原生交付验证。
+  - 实施记录：根因由用户 Safari 下载截图与 `v0.1.0` DMG 原生复现确认：文件 SHA-256 正常且运行时闭包完整，但 `codesign --verify --deep --strict` 报资源未封装，主程序只有 `adhoc,linker-signed`。无证书分支现向同 Qt kit 的 `macdeployqt` 传入 `-codesign=-`，打包脚本改为无条件严格验证 Bundle；README 依据 Apple 官方说明区分 ad-hoc、Developer ID、公证与“仍要打开”。本机 Qt 5.15.2 Release 6/6 CTest、自包含 delivery、DMG 内外严格验证和实际启动通过；签名详情为 `Signature=adhoc`、存在 sealed resources。带 Safari quarantine 属性的副本仍通过严格签名结构验证，`spctl` 仅按预期因缺少 Developer ID 拒绝并要求人工覆盖。PR #5 run `31511847361` 在 macOS arm64/Qt 6.8 日志确认 ad-hoc Bundle、`valid on disk` 与 designated requirement，Windows 回归通过；标签 `v0.1.2` run `31512200305` 的 macOS、Windows、Publish GitHub Release 三个 job 全部成功。Release API 报告 DMG 约 24.2 MB、SHA-256 `0a59c74bb4ca2719fa771d8957b197ed4ff38b234c95ec5c239a2b0c646f4633`，Windows ZIP 约 22.7 MB，附件状态均为 `uploaded`。
 
 ## 执行波次
 
@@ -400,7 +400,7 @@
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
-| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023 | Windows/macOS Actions build/test/deploy、签名门控、artifact/Release、ad-hoc Bundle 严格验证 | 执行中 |
+| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023 | Windows/macOS Actions build/test/deploy、签名门控、artifact/Release、ad-hoc Bundle 严格验证 | 已完成 |
 
 ## 完成门槛
 
@@ -421,4 +421,4 @@
 - [x] Windows x64 与 macOS arm64 GitHub runner 均完成 Release 构建、全 CTest 和自包含产物检查。
 - [x] 普通 run 提供两个 artifact，测试 `v*` 标签提供包含 DMG/ZIP 的 GitHub Release。
 - [x] 无 Secrets 的 unsigned 降级有明确证据；真实 Developer ID/notary 与 Authenticode 验证保持为配置对应 Secrets 后的条件式路径。
-- [ ] TASK-023 完成，macOS ad-hoc Bundle 严格签名验证、quarantine 等价检查和新标签 Release 原生验证均通过。
+- [x] TASK-023 完成，macOS ad-hoc Bundle 严格签名验证、quarantine 等价检查和新标签 Release 原生验证均通过。

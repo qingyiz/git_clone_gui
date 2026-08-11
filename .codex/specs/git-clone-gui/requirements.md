@@ -33,6 +33,7 @@
 | FACT-019 | 当前 Mac 仅有 Apple Development 身份，没有可用于站外分发公证的 Developer ID Application 身份；Windows 代码签名证书也未提供。 | 已验证/未知 | `security find-identity`、用户尚未提供证书 | 流水线必须在无凭据时生成明确标识的未签名测试包，在 Secrets 完整时签名/公证，不能伪造签名成功。 |
 | FACT-020 | PR #2 的 Actions run `31506923442` 已在 macOS arm64 与 Windows x64 上完成 Qt 6.8 Release 构建、6/6 CTest、部署、unsigned 打包和 artifact 上传。 | 已验证 | GitHub Actions job/step API、artifact API | Windows 源码编译与两平台 unsigned 交付路径已有原生证据；真实签名、公证与 tag Release 仍待凭据/标签。 |
 | FACT-021 | Release `v0.1.0`/`v0.1.1` 的 DMG 校验和与 Bundle 依赖完整，但部署后的 `.app` 仅保留链接器 ad-hoc 签名；新增 Frameworks/PlugIns/Resources 后未重签，`codesign --verify --deep --strict` 报 `code has no resources but signature indicates they must be present`，Safari quarantine 下被 Gatekeeper 显示为“已损坏”。 | 已验证 | 用户截图；下载文件 SHA-256；DMG 挂载、`codesign`/`spctl` 原生复现 | 无 Developer ID 路径也必须重签整个 Bundle 并严格验证；可信无警告分发仍需要 Developer ID 与公证。 |
+| FACT-022 | 修复后的 PR #5 run `31511847361` 与标签 `v0.1.2` run `31512200305` 均在 macOS arm64/Qt 6.8 完成 ad-hoc Bundle 重签、6/6 CTest、严格 `codesign`、DMG 打包和上传；标签 run 同时完成 Windows 与 Release job。 | 已验证 | Actions job/step 日志；Release asset API | 发布后的 DMG 不再包含失效 Bundle 签名；无 Developer ID 时 Gatekeeper 仍会要求用户明确覆盖。 |
 
 ### 技术与运行环境调查
 
@@ -407,4 +408,4 @@
 
 ## 未决问题
 
-- ad-hoc Bundle 重签修复需要在 macOS 原生 runner 与 Safari quarantine 等价场景中重新验证。真实可信、无 Gatekeeper 覆盖步骤的发布仍需用户取得 Developer ID Application、Apple 公证凭据及可选 Windows Authenticode PFX，并配置 GitHub Secrets；在此之前 macOS Release 仅属于无 Developer ID 信任链的测试版。
+- ad-hoc Bundle 重签已在本机 quarantine 等价场景和 macOS 原生 runner 中验证。真实可信、无 Gatekeeper 覆盖步骤的发布仍需用户取得 Developer ID Application、Apple 公证凭据及可选 Windows Authenticode PFX，并配置 GitHub Secrets；在此之前 macOS Release 仅属于无 Developer ID 信任链的测试版。
