@@ -1,0 +1,24 @@
+set(_git_clone_gui_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/GitCloneGui.app")
+
+if(NOT EXISTS "${_git_clone_gui_app}/Contents/MacOS/GitCloneGui")
+    message(FATAL_ERROR "待部署的应用不存在：${_git_clone_gui_app}")
+endif()
+
+execute_process(
+    COMMAND "@GIT_CLONE_GUI_MACDEPLOYQT@"
+            "${_git_clone_gui_app}"
+            -always-overwrite
+    RESULT_VARIABLE _git_clone_gui_deploy_result
+    OUTPUT_VARIABLE _git_clone_gui_deploy_output
+    ERROR_VARIABLE _git_clone_gui_deploy_error
+)
+
+if(NOT _git_clone_gui_deploy_result EQUAL 0)
+    message(FATAL_ERROR
+        "macdeployqt 执行失败（${_git_clone_gui_deploy_result}）。\n"
+        "stdout:\n${_git_clone_gui_deploy_output}\n"
+        "stderr:\n${_git_clone_gui_deploy_error}"
+    )
+endif()
+
+message(STATUS "已生成自包含 macOS 应用：${_git_clone_gui_app}")
