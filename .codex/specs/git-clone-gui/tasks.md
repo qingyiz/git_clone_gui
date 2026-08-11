@@ -2,7 +2,7 @@
 
 > 阶段：tasks
 >
-> 状态：已完成
+> 状态：执行中
 >
 > 最近更新：2026-08-11
 
@@ -300,6 +300,51 @@
   - 验证：presentation Completed/Failed/Cancelled 信号计数、标题与级别；Debug/Release 全 CTest；install self-contained delivery；macOS 启动与人工通知检查（权限允许时）。
   - 实施记录：新增 `NotificationSeverity` 与独立 `DesktopNotifier`，后者仅依赖 QtWidgets，使用蓝色 G 图标、`QSystemTrayIcon` capability check、Information/Critical 映射和 12 秒 tray item 自动隐藏；不支持系统消息时直接返回，不改变页内状态或 controller outcome。`MainWindow` 仅在最终 `Completed`/`Failed` 各发一次“GitCloneGui · 克隆完成/失败”请求，正文沿用 controller 最终消息（成功含父目录与子仓库数，失败含具体阶段与错误），`Cancelled` 不发；`src/app/main.cpp` 作为唯一组合根连接 notifier。presentation 新增成功/失败/取消计数、标题、正文和级别断言，均通过且不会在测试中实际弹通知。Debug/Release 全 CTest 均 6/6；自包含安装 Bundle 通过 Frameworks、Cocoa plugin、RPATH、Bundle 元数据检查，安装主程序可启动并保持事件循环。`inspect_structure` 显示 MainWindow 372 行，仍低于约 420 行预算；Notifier 67 行，未引入 application/core/infrastructure 反向依赖。系统最终是否展示仍由 macOS 通知权限决定，权限关闭时页内结果为可用降级路径。
 
+- [x] TASK-020：补齐 Windows 原生 target 资源与自包含安装树
+  - 类型：required
+  - 需求：REQ-004、REQ-011
+  - 设计：DEC-003、DEC-014；ARCH-002、ARCH-009；BUILD-003、BUILD-008；PROP-001、PROP-014
+  - 单一变更原因：把现有“仅保留 WIN32 编译入口”升级为有图标、UTF-8 文本和 Qt/MSVC 运行时闭包的 Windows x64 便携应用。
+  - 模块/构建单元：`GitCloneGui` app target、Windows resource、Windows install deploy script。
+  - 架构约束：ARCH-002、ARCH-009 / BUILD-003、BUILD-008；平台资源和部署只归 app/cmake；Windows 原生测试暴露的路径分隔符问题只在 core 路径不变量内做最小修复，不引入新 link 边。
+  - 依赖变化：无生产 link 边变化；MSVC target compile options 增加 `/utf-8`；Windows app sources 增加 `.rc/.ico`。
+  - 平台/交付物：Windows x64 build-tree `build/ci-windows/bin/GitCloneGui.exe`；安装树 `build/ci-windows/install/bin` 含 exe/DLL/plugins/runtime。
+  - 依赖：TASK-019。
+  - 修改范围：`cmake/CompilerWarnings.cmake`、`cmake/ConfigureAppDeployment.cmake`、`cmake/DeployWindows.cmake.in`、`src/app/CMakeLists.txt`、`src/app/resources/GitCloneGui.ico`、`src/app/WindowsResources.rc.in`；若 Windows 原生测试暴露平台路径差异，可最小修改 `src/core/CloneRequest.cpp` 及对应既有 core 回归，不改 application/infrastructure/presentation 行为。
+  - 产出：正确的 APPLE/WIN32/其他平台 target 分支、Windows icon、同 Qt kit 的 `windeployqt` install-time 部署。
+  - 验证：本机 CMake 静态/回归；`windows-2022` Release configure/build/CTest/install；断言 exe、Qt DLL、qwindows plugin、compiler runtime。
+  - 实施记录：已实现 APPLE/WIN32/其他平台 target 分支，新增 256×256 RGBA `.ico` 与配置生成的 Windows resource，MSVC 增加 `/utf-8`；部署配置抽到 59 行 `ConfigureAppDeployment.cmake`，Windows install script 使用同 Qt kit 的 `windeployqt` 并断言 qwindows plugin。本机 Debug/Release CMake 与 6/6 CTest 均通过，app CMake 保持 46 行且无业务依赖变化。首轮 Windows runner 暴露 `cleanPath` 正斜杠与 `QDir::separator()` 反斜杠混合导致的合法路径逃逸误判；core 统一分隔符并沿用 Windows case-folded identity 后，run `31506923442` 在 Windows x64/Qt 6.8/MSVC 2022 成功编译、6/6 CTest、windeployqt、MSVC runtime 补齐、ZIP 结构断言和 artifact 上传。
+
+- [x] TASK-021：实现 GitHub Actions 双平台打包与可选签名公证
+  - 类型：required
+  - 需求：REQ-011
+  - 设计：DEC-014；ARCH-009；BUILD-005、BUILD-008；PROP-014、PROP-015
+  - 单一变更原因：让 GitHub 原生 runner 自动产生可下载的 macOS DMG/Windows ZIP，并按 Secrets 进入严格签名路径。
+  - 模块/构建单元：`.github/workflows/release.yml` 与 `scripts/release`；不属于运行时 C++ target。
+  - 架构约束：ARCH-009 / BUILD-005、BUILD-008；YAML 只编排，签名/打包细节下沉脚本；build jobs 只读，tag release job 最小写权限；Secrets 只走环境变量/runner temp。
+  - 依赖变化：新增 GitHub Actions checkout/upload/download 与 install-qt action（固定 commit SHA）；无应用 link/runtime 依赖。
+  - 平台/交付物：`GitCloneGui-macOS-arm64.dmg` 与 `GitCloneGui-Windows-x64.zip`；普通 run 为 artifact，`v*` 为 Release 附件。
+  - 依赖：TASK-020。
+  - 修改范围：`.github/workflows/release.yml`、`scripts/release/**`、`cmake/DeployMacOS.cmake.in`；不改 UI/克隆/配置代码。
+  - 产出：macOS 证书临时 keychain 导入、`macdeployqt` notarization signing、DMG 生成/公证/staple；Windows PFX/signtool；artifact 与 tag Release 编排。
+  - 验证：YAML 解析/actionlint（可用时）、shell 语法、PowerShell parser、无 Secret 静态路径、本机 unsigned DMG/Bundle 回归、GitHub 双 runner run。
+  - 实施记录：已新增固定 Action commit SHA 的双平台 workflow、macOS 临时 keychain/Developer ID/notarytool/staple 脚本、Windows PFX/signtool 和 portable ZIP 脚本；build jobs 为 contents read，tag-only release job 单独 contents write。Bash `-n`、Ruby YAML 与 actionlint 均通过；本机 Release 6/6 CTest、自包含 delivery、unsigned DMG 创建/挂载/arm64 结构和安装 app 启动均通过。PR #2 run `31506923442` 的 macOS arm64 与 Windows x64 jobs 均完成 Qt 6.8 Release、6/6 CTest、unsigned 降级、平台部署/打包和 artifact 上传；Windows/macOS artifact API 分别报告约 22.7/23.2 MB。真实签名公证按设计仍待 Secrets，不属于无凭据分支的完成声明。
+
+- [ ] TASK-022：补齐发布操作说明并闭环线上交付证据
+  - 类型：required
+  - 需求：REQ-011
+  - 设计：DEC-014；ARCH-009；BUILD-008；PROP-014、PROP-015
+  - 单一变更原因：让维护者能取得证书、配置 Secrets、触发 tag Release，并让下载者区分 artifact、unsigned 与正式签名包。
+  - 模块/构建单元：README/Spec 与 GitHub Actions 交付验证；不产生运行时模块。
+  - 架构约束：ARCH-009 / BUILD-008；文档不把未运行的 Windows/Qt6/签名路径描述为已验证。
+  - 依赖变化：无。
+  - 平台/交付物：GitHub Actions 两个 artifact、`v*` Release 两个附件；签名证据按 Secrets 实际状态记录。
+  - 依赖：TASK-021。
+  - 修改范围：`README.md`、Spec 实施记录；仅在原生 run 发现问题时最小修复对应 workflow/CMake/script。
+  - 产出：下载入口、手动/标签发版、Apple Developer ID + notarytool Secrets、Windows PFX Secrets、证书限制与排错说明。
+  - 验证：README 命令/Secret 名与 workflow 一致；提交推送后的 macOS/Windows jobs、artifact 清单；测试标签 Release；有证书时签名工具验证。
+  - 实施记录：README 已补充 Release/Actions artifact 下载、Windows 本机构建、workflow 触发、标签发布、5 个 Apple Secrets、2 个 Windows Secrets、Developer ID 与 Apple Development 区别、PFX/云 HSM 限制及 unsigned 风险。文档与 workflow Secret 名一致；GitHub 线上 run/Release 仍需把本轮改动提交推送，任务暂不勾选。
+
 ## 执行波次
 
 | 波次 | 任务 | 并行性 | 完成后仓库状态 |
@@ -321,6 +366,9 @@
 | 15 | TASK-017 | 顺序 | 目录、页内结果与大日志体验完成并交付回归 |
 | 16 | TASK-018 | 顺序 | 分支选择器无原生黑色直角边框且视觉回归通过 |
 | 17 | TASK-019 | 顺序 | 最终成功/失败各产生一次对应系统通知且取消不误报 |
+| 18 | TASK-020 | 顺序 | Windows app target 与自包含安装树契约就绪 |
+| 19 | TASK-021 | 顺序 | 双平台 artifact 与 tag Release 流水线就绪 |
+| 20 | TASK-022 | 顺序 | 发布文档与 GitHub 原生交付证据闭环 |
 
 ## 覆盖检查
 
@@ -336,6 +384,7 @@
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
+| REQ-011 | TASK-020, TASK-021, TASK-022 | Windows/macOS Actions build/test/deploy、签名门控、artifact/Release | 执行中 |
 
 ## 完成门槛
 
@@ -352,3 +401,7 @@
 - [x] 分支查询、可搜索选择、空目录、页内结果和日志高度回归通过。
 - [x] TASK-018 完成，PROP-012 有自动化与 snapshot 证据。
 - [x] TASK-019 完成，PROP-013 与系统通知降级行为有证据。
+- [ ] TASK-020～TASK-022 全部完成。
+- [ ] Windows x64 与 macOS arm64 GitHub runner 均完成 Release 构建、全 CTest 和自包含产物检查。
+- [ ] 普通 run 提供两个 artifact，测试 `v*` 标签提供包含 DMG/ZIP 的 GitHub Release。
+- [ ] 无 Secrets 的 unsigned 降级有明确证据；配置签名 Secrets 后，Developer ID/notary 或 Authenticode 路径按实际证书完成验证。

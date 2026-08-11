@@ -1,0 +1,36 @@
+set(_git_clone_gui_bin "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin")
+set(_git_clone_gui_executable "${_git_clone_gui_bin}/GitCloneGui.exe")
+
+if(NOT EXISTS "${_git_clone_gui_executable}")
+    message(FATAL_ERROR "待部署的应用不存在：${_git_clone_gui_executable}")
+endif()
+
+set(_git_clone_gui_deploy_mode --release)
+if(CMAKE_INSTALL_CONFIG_NAME MATCHES "^[Dd]ebug$")
+    set(_git_clone_gui_deploy_mode --debug)
+endif()
+
+execute_process(
+    COMMAND "@GIT_CLONE_GUI_WINDEPLOYQT@"
+            "${_git_clone_gui_deploy_mode}"
+            --no-translations
+            --dir "${_git_clone_gui_bin}"
+            "${_git_clone_gui_executable}"
+    RESULT_VARIABLE _git_clone_gui_deploy_result
+    OUTPUT_VARIABLE _git_clone_gui_deploy_output
+    ERROR_VARIABLE _git_clone_gui_deploy_error
+)
+
+if(NOT _git_clone_gui_deploy_result EQUAL 0)
+    message(FATAL_ERROR
+        "windeployqt 执行失败（${_git_clone_gui_deploy_result}）。\n"
+        "stdout:\n${_git_clone_gui_deploy_output}\n"
+        "stderr:\n${_git_clone_gui_deploy_error}"
+    )
+endif()
+
+if(NOT EXISTS "${_git_clone_gui_bin}/platforms/qwindows.dll")
+    message(FATAL_ERROR "windeployqt 未生成 platforms/qwindows.dll：${_git_clone_gui_bin}")
+endif()
+
+message(STATUS "已生成自包含 Windows 应用目录：${_git_clone_gui_bin}")

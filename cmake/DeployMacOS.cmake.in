@@ -4,10 +4,19 @@ if(NOT EXISTS "${_git_clone_gui_app}/Contents/MacOS/GitCloneGui")
     message(FATAL_ERROR "待部署的应用不存在：${_git_clone_gui_app}")
 endif()
 
+set(_git_clone_gui_deploy_arguments
+    "${_git_clone_gui_app}"
+    -always-overwrite
+)
+
+if(NOT "$ENV{GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY}" STREQUAL "")
+    list(APPEND _git_clone_gui_deploy_arguments
+        "-sign-for-notarization=$ENV{GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY}"
+    )
+endif()
+
 execute_process(
-    COMMAND "@GIT_CLONE_GUI_MACDEPLOYQT@"
-            "${_git_clone_gui_app}"
-            -always-overwrite
+    COMMAND "@GIT_CLONE_GUI_MACDEPLOYQT@" ${_git_clone_gui_deploy_arguments}
     RESULT_VARIABLE _git_clone_gui_deploy_result
     OUTPUT_VARIABLE _git_clone_gui_deploy_output
     ERROR_VARIABLE _git_clone_gui_deploy_error
@@ -21,4 +30,8 @@ if(NOT _git_clone_gui_deploy_result EQUAL 0)
     )
 endif()
 
-message(STATUS "已生成自包含 macOS 应用：${_git_clone_gui_app}")
+if(NOT "$ENV{GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY}" STREQUAL "")
+    message(STATUS "已生成并签名自包含 macOS 应用：${_git_clone_gui_app}")
+else()
+    message(STATUS "已生成未签名的自包含 macOS 应用：${_git_clone_gui_app}")
+endif()

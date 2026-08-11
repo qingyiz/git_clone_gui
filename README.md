@@ -18,6 +18,15 @@
 - 支持取消：先请求终止，3 秒未退出则强制结束；
 - 严格校验路径逃逸、重复子仓库目标和已存在的父目录。
 
+## 直接下载
+
+长期版本从 [GitHub Releases](https://github.com/qingyiz/git_clone_gui/releases) 下载：
+
+- `GitCloneGui-macOS-arm64.dmg`：Apple Silicon Mac（M1/M2/M3/M4 等）；
+- `GitCloneGui-Windows-x64.zip`：64 位 Windows 10/11 便携包，解压后运行 `GitCloneGui.exe`。
+
+每次 `main` 推送、PR 或手动运行流水线也会生成同名 Actions artifact，保留 14 天，适合测试。Release 由 `v*` 标签触发，适合长期下载。无签名 Secrets 时流水线仍会生成测试包，但 macOS 会显示 Gatekeeper 警告，Windows 也不会显示受信任发布者；正式对外发布前应配置后文的签名凭据。
+
 ## 环境要求
 
 - CMake 3.21+
@@ -26,7 +35,7 @@
 - Git CLI
 - 推荐 Ninja；仓库 Preset 默认使用 Ninja
 
-已验证环境：macOS arm64、CMake 3.27.1、Apple Clang 17、Qt 5.15.2、Ninja 1.11.1、Git 2.44.0。
+本机已验证环境：macOS arm64、CMake 3.27.1、Apple Clang 17、Qt 5.15.2、Ninja 1.11.1、Git 2.44.0。GitHub 流水线还会使用 macOS arm64/Qt 6.8 和 Windows x64/MSVC 2022/Qt 6.8；以仓库 Actions 页的实际成功运行作为线上平台验证证据。
 
 ## 构建并运行
 
@@ -67,6 +76,73 @@ cmake -S . -B build/manual -G Ninja \
 cmake --build build/manual
 ctest --test-dir build/manual --output-on-failure
 ```
+
+Windows 本机可使用 Visual Studio 2022 x64：
+
+```powershell
+cmake -S . -B build/windows -G "Visual Studio 17 2022" -A x64 `
+  -DCMAKE_PREFIX_PATH="C:\Qt\6.8.3\msvc2022_64"
+cmake --build build/windows --config Release --parallel
+ctest --test-dir build/windows -C Release --output-on-failure
+cmake --install build/windows --config Release --prefix build/install-windows
+```
+
+安装步骤会自动调用同一 Qt kit 的 `windeployqt`。可运行目录是 `build/install-windows/bin`，其中应包含 `GitCloneGui.exe`、Qt DLL、`platforms/qwindows.dll` 和 MSVC runtime；目标电脑仍需安装 Git for Windows 并确保 `git.exe` 在 `PATH` 中。
+
+## GitHub Actions 自动构建与发版
+
+工作流位于 `.github/workflows/release.yml`，执行以下流程：
+
+1. macOS 使用 `macos-15` arm64 runner，Qt 6.8 LTS、CMake/Ninja 完成 Release 编译和全部 CTest；`macdeployqt` 生成自包含 `.app`，随后打成 DMG。
+2. Windows 使用 `windows-2022` x64 runner，Qt 6.8 LTS、Visual Studio 2022 完成 Release 编译和全部 CTest；`windeployqt` 收集 Qt/plugin，脚本补齐 MSVC runtime 后生成便携 ZIP。
+3. 普通 `main` push、PR、手动运行只上传 Actions artifact。
+4. `v*` 标签在两个平台都成功后创建或更新同名 GitHub Release，并附加 DMG 与 ZIP。
+
+首次启用时，将本分支合并到 `main` 或直接从 Actions 页面选择 “Build and Release” → “Run workflow”。正式发布版本示例：
+
+```bash
+git switch main
+git pull --ff-only
+git tag -a v1.0.0 -m "GitCloneGui v1.0.0"
+git push origin v1.0.0
+```
+
+标签推送后到仓库的 Actions 页面观察两个平台 job；全部成功后，Release 页面会自动出现附件。不要在构建失败时手工上传裸 `.exe` 或 build-tree `.app`，它们没有完整运行时。
+
+### macOS 签名与公证
+
+站外分发不能使用普通的 `Apple Development` 证书。需要加入 Apple Developer Program，并在 Apple Developer 的 Certificates 页面创建 `Developer ID Application` 证书。当前开发机探测到的 `Apple Development` 身份只适合开发，无法通过 Developer ID 公证。
+
+准备流程：
+
+1. 在钥匙串中确认证书和对应私钥同时存在，然后导出为带密码的 `.p12`。
+2. 在 Apple ID 账户页面为 `notarytool` 创建 app-specific password；不要使用 Apple ID 登录密码。
+3. 在 GitHub 仓库进入 Settings → Secrets and variables → Actions，新增以下 Repository secrets：
+
+| Secret | 内容 |
+|---|---|
+| `MACOS_CERTIFICATE` | P12 的单行 Base64，例如 `base64 < DeveloperID.p12 \| tr -d '\n'` |
+| `MACOS_CERTIFICATE_PASSWORD` | 导出 P12 时设置的密码 |
+| `APPLE_ID` | Apple Developer 账户邮箱 |
+| `APPLE_APP_PASSWORD` | Apple ID app-specific password |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+流水线把 P12 写入 runner 临时目录并导入临时 keychain，`macdeployqt` 使用 `Developer ID Application`、Hardened Runtime 和 secure timestamp 签署 `.app`；之后签署最终 DMG，用 `notarytool --wait` 提交公证，成功后 stapling，并通过 `codesign`、`stapler` 和 `spctl` 验证。任一签名或公证步骤失败都会阻止 Release job。
+
+Apple 公证是在线外部服务，证书申请、开发者年费、协议状态和公证服务异常都不由本项目控制。只配置证书但未配齐三个公证 Secret 时会得到“已签名但未公证”的包；面向普通用户发布时建议五个 Secret 全部配置。
+
+### Windows Authenticode 签名
+
+需要从受信任的代码签名 CA 或企业证书体系取得 Authenticode 证书。流水线当前支持“可导出的 PFX”模式：
+
+| Secret | 内容 |
+|---|---|
+| `WINDOWS_CERTIFICATE` | PFX 文件的单行 Base64，例如 PowerShell：`[Convert]::ToBase64String([IO.File]::ReadAllBytes('codesign.pfx'))` |
+| `WINDOWS_CERTIFICATE_PASSWORD` | PFX 密码 |
+
+配置后，流水线使用 Windows SDK `signtool` 对 `GitCloneGui.exe` 执行 SHA-256 Authenticode 签名和 RFC3161 时间戳，再执行 `signtool verify /pa /v`。PFX 仅写入 runner 临时目录并在完成后删除。
+
+部分公开 CA 根据当前行业规则只把私钥保存在 USB Token 或云 HSM，不能导出 PFX；这种证书不能直接使用上述两个 Secret，需要改接该 CA 的云签名服务（例如 Azure Trusted Signing 或证书供应商的远程签名工具）。自签名 PFX 虽能让技术步骤通过，但不会让 Windows/SmartScreen 把发布者识别为公共受信任开发者。
 
 ## 使用方法
 
@@ -133,7 +209,7 @@ find build/install/GitCloneGui.app/Contents -maxdepth 2 -type d
 otool -L build/install/GitCloneGui.app/Contents/MacOS/GitCloneGui
 ```
 
-项目暂未制作 DMG/PKG，也未执行 Developer ID 签名、公证或自动更新。因此复制到其他 Mac 后仍可能遇到 Gatekeeper 提示；这与 Qt 依赖是否自包含是两件不同的事。
+GitHub Actions 会在安装树基础上生成 DMG。没有 Secrets 时它是 unsigned 测试包；配齐 Developer ID 和公证 Secrets 后，流水线会生成并验证已签名、公证、stapled 的 DMG。项目仍不制作 PKG、不提交 Mac App Store，也不实现自动更新。
 
 ## 项目结构
 
@@ -144,5 +220,7 @@ src/infrastructure   QProcess Git 适配器、QSettings 配置适配器
 src/presentation     卡片组件、双栏窗口、集中式视觉样式
 src/app              应用组合根
 tests                core/application/infrastructure/presentation/真实 Git 测试
+scripts/release      macOS/Windows 打包、签名与交付结构校验
+.github/workflows    GitHub Actions 双平台构建与标签 Release
 .codex/specs         需求、设计、任务与实施证据
 ```
