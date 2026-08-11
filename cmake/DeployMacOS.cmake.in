@@ -13,6 +13,10 @@ if(NOT "$ENV{GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY}" STREQUAL "")
     list(APPEND _git_clone_gui_deploy_arguments
         "-sign-for-notarization=$ENV{GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY}"
     )
+else()
+    list(APPEND _git_clone_gui_deploy_arguments
+        "-codesign=-"
+    )
 endif()
 
 execute_process(
@@ -33,5 +37,5 @@ endif()
 if(NOT "$ENV{GIT_CLONE_GUI_MACOS_SIGNING_IDENTITY}" STREQUAL "")
     message(STATUS "已生成并签名自包含 macOS 应用：${_git_clone_gui_app}")
 else()
-    message(STATUS "已生成未签名的自包含 macOS 应用：${_git_clone_gui_app}")
+    message(STATUS "已生成并完成 ad-hoc Bundle 签名的自包含 macOS 应用：${_git_clone_gui_app}")
 endif()

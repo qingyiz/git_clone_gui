@@ -34,9 +34,7 @@ if [[ -n "$external_dependencies" ]]; then
   exit 1
 fi
 
-if [[ "${MACOS_SIGNING_ENABLED:-false}" == "true" ]]; then
-  codesign --verify --deep --strict --verbose=2 "$app_path"
-fi
+codesign --verify --deep --strict --verbose=2 "$app_path"
 
 stage_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/git-clone-gui-dmg.XXXXXX")"
 trap 'rm -rf "$stage_dir"' EXIT
