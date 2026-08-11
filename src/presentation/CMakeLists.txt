@@ -1,11 +1,16 @@
 add_library(git_clone_presentation STATIC
     AppStyle.cpp
     AppStyle.h
+    BranchSelector.cpp
+    BranchSelector.h
     ChildRepositoryCard.cpp
     ChildRepositoryCard.h
+    DesktopNotifier.cpp
+    DesktopNotifier.h
     MainWindow.cpp
     MainWindow.h
     MainWindowUi.cpp
+    NotificationSeverity.h
 )
 
 target_include_directories(git_clone_presentation

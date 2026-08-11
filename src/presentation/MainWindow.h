@@ -3,6 +3,7 @@
 #include "application/CloneController.h"
 #include "application/ConfigurationStore.h"
 #include "core/CloneRequest.h"
+#include "presentation/NotificationSeverity.h"
 
 #include <QList>
 #include <QMainWindow>
@@ -14,6 +15,7 @@ class QLineEdit;
 class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
+class QSplitter;
 class QTimer;
 class QVBoxLayout;
 class QWidget;
@@ -21,6 +23,8 @@ class QWidget;
 namespace gitclone {
 
 class ChildRepositoryCard;
+class BranchSelector;
+class RemoteBranchService;
 
 class MainWindow final : public QMainWindow {
     Q_OBJECT
@@ -29,8 +33,17 @@ public:
     explicit MainWindow(CloneController *controller,
                         ConfigurationStore *configurationStore,
                         QWidget *parent = nullptr);
+    MainWindow(CloneController *controller,
+               ConfigurationStore *configurationStore,
+               RemoteBranchService *branchService,
+               QWidget *parent);
 
     int childCardCount() const;
+
+signals:
+    void taskResultNotificationRequested(const QString &title,
+                                         const QString &message,
+                                         gitclone::NotificationSeverity severity);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -65,11 +78,13 @@ private:
     void scheduleConfigurationSave();
     void setConfigurationEnabled(bool enabled);
     void setValidationSummary(const QStringList &errors);
+    void setTaskResult(CloneController::Outcome outcome, const QString &message);
 
     CloneController *m_controller;
     ConfigurationStore *m_configurationStore;
+    RemoteBranchService *m_branchService;
     QLineEdit *m_parentRepositoryEdit = nullptr;
-    QLineEdit *m_parentBranchEdit = nullptr;
+    BranchSelector *m_parentBranchSelector = nullptr;
     QLineEdit *m_parentDirectoryEdit = nullptr;
     QLineEdit *m_destinationRootEdit = nullptr;
     QPushButton *m_browseButton = nullptr;
@@ -79,10 +94,12 @@ private:
     QList<ChildRepositoryCard *> m_childCards;
     QPlainTextEdit *m_previewEdit = nullptr;
     QLabel *m_validationLabel = nullptr;
+    QFrame *m_statusCard = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_saveStatusLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;
     QPlainTextEdit *m_logEdit = nullptr;
+    QSplitter *m_executionSplitter = nullptr;
     QPushButton *m_startButton = nullptr;
     QPushButton *m_cancelButton = nullptr;
     QTimer *m_saveTimer = nullptr;

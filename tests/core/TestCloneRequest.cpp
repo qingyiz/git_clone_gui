@@ -1,6 +1,7 @@
 #include "core/CloneRequest.h"
 
 #include <QDir>
+#include <QFile>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -16,7 +17,9 @@ private slots:
     void rejectsUnsafeChildPaths();
     void rejectsDuplicateChildTargets();
     void identifiesIncompleteChildByIndex();
-    void rejectsExistingParentTarget();
+    void acceptsExistingEmptyParentTarget();
+    void rejectsNonEmptyParentTarget();
+    void rejectsParentTargetThatIsAFile();
     void keepsShellCharactersInSingleArguments();
     void quotesPreviewForDisplay();
 };
@@ -110,15 +113,41 @@ void TestCloneRequest::identifiesIncompleteChildByIndex()
     QVERIFY(result.errors.join(QLatin1Char('\n')).contains(QStringLiteral("子仓库 #2分支")));
 }
 
-void TestCloneRequest::rejectsExistingParentTarget()
+void TestCloneRequest::acceptsExistingEmptyParentTarget()
 {
     QTemporaryDir root;
     QVERIFY(QDir(root.path()).mkdir(QStringLiteral("parent-project")));
 
     const ValidationResult result = buildClonePlan(validRequest(root.path()));
 
+    QVERIFY2(result.valid, qPrintable(result.errors.join(QLatin1Char('\n'))));
+}
+
+void TestCloneRequest::rejectsNonEmptyParentTarget()
+{
+    QTemporaryDir root;
+    QVERIFY(QDir(root.path()).mkdir(QStringLiteral("parent-project")));
+    QFile hiddenFile(root.path() + QStringLiteral("/parent-project/.existing"));
+    QVERIFY(hiddenFile.open(QIODevice::WriteOnly));
+    hiddenFile.close();
+
+    const ValidationResult result = buildClonePlan(validRequest(root.path()));
+
     QVERIFY(!result.valid);
-    QVERIFY(result.errors.join(QLatin1Char('\n')).contains(QStringLiteral("已存在")));
+    QVERIFY(result.errors.join(QLatin1Char('\n')).contains(QStringLiteral("必须为空")));
+}
+
+void TestCloneRequest::rejectsParentTargetThatIsAFile()
+{
+    QTemporaryDir root;
+    QFile target(root.path() + QStringLiteral("/parent-project"));
+    QVERIFY(target.open(QIODevice::WriteOnly));
+    target.close();
+
+    const ValidationResult result = buildClonePlan(validRequest(root.path()));
+
+    QVERIFY(!result.valid);
+    QVERIFY(result.errors.join(QLatin1Char('\n')).contains(QStringLiteral("必须为空")));
 }
 
 void TestCloneRequest::keepsShellCharactersInSingleArguments()

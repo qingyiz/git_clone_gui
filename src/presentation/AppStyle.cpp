@@ -25,6 +25,14 @@ QFrame[role="statusCard"] {
     border: 1px solid #BFDBFE;
     border-radius: 12px;
 }
+QFrame#statusCard[statusState="success"] {
+    background: #ECFDF5;
+    border: 1px solid #A7F3D0;
+}
+QFrame#statusCard[statusState="error"] {
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+}
 QLabel#appIcon {
     background: #2563EB;
     color: #FFFFFF;
@@ -71,7 +79,7 @@ QLabel#validationSummary[validationState="ready"] {
 QLabel#validationSummary[validationState="error"] {
     color: #B91C1C;
 }
-QLineEdit {
+QLineEdit, QComboBox {
     min-height: 22px;
     padding: 8px 10px;
     background: #F8FAFC;
@@ -80,18 +88,44 @@ QLineEdit {
     border-radius: 8px;
     selection-background-color: #BFDBFE;
 }
-QLineEdit:hover {
+QLineEdit:hover, QComboBox:hover {
     border-color: #94A3B8;
 }
-QLineEdit:focus {
+QLineEdit:focus, QComboBox:focus {
     background: #FFFFFF;
     border: 2px solid #3B82F6;
     padding: 7px 9px;
 }
-QLineEdit:disabled {
+QLineEdit:disabled, QComboBox:disabled {
     background: #F1F5F9;
     color: #94A3B8;
     border-color: #E2E8F0;
+}
+QComboBox QLineEdit {
+    min-height: 22px;
+    padding: 0px;
+    background: transparent;
+    border: none;
+}
+QComboBox QLineEdit:focus {
+    padding: 0px;
+    border: none;
+}
+QComboBox QAbstractItemView {
+    background: #FFFFFF;
+    color: #0F172A;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    padding: 4px;
+    selection-background-color: #DBEAFE;
+    selection-color: #1D4ED8;
+    outline: none;
+}
+QComboBox[lookupState="loading"] {
+    border-color: #60A5FA;
+}
+QComboBox[lookupState="error"] {
+    border-color: #F59E0B;
 }
 QPushButton {
     min-height: 22px;
@@ -172,6 +206,18 @@ QProgressBar::chunk {
 }
 QScrollArea {
     border: none;
+    background: transparent;
+}
+QSplitter::handle:vertical {
+    height: 8px;
+    margin: 2px 24px;
+    background: #D7E0EC;
+    border-radius: 3px;
+}
+QSplitter::handle:vertical:hover {
+    background: #93C5FD;
+}
+QWidget#executionSummaryContainer {
     background: transparent;
 }
 QWidget#configurationScrollContent {

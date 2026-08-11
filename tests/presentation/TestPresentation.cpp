@@ -1,13 +1,21 @@
+#include "presentation/BranchSelector.h"
 #include "presentation/ChildRepositoryCard.h"
 #include "presentation/MainWindow.h"
 
 #include <QDir>
+#include <QApplication>
+#include <QCompleter>
 #include <QEvent>
+#include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPixmap>
+#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSplitter>
+#include <QSplitterHandle>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -21,6 +29,28 @@ public:
     bool isRunning() const override { return false; }
     void terminate() override { }
     void kill() override { }
+};
+
+class ControllableProcessRunner final : public ProcessRunner {
+public:
+    using ProcessRunner::ProcessRunner;
+    bool start(const ProcessCommand &command) override
+    {
+        lastCommand = command;
+        running = true;
+        return true;
+    }
+    bool isRunning() const override { return running; }
+    void terminate() override { running = false; }
+    void kill() override { running = false; }
+    void complete(int exitCode)
+    {
+        running = false;
+        emit finished(exitCode, true);
+    }
+
+    ProcessCommand lastCommand;
+    bool running = false;
 };
 
 class FakeConfigurationStore final : public ConfigurationStore {
@@ -38,14 +68,52 @@ public:
     bool saveSucceeds = true;
 };
 
+class FakeRemoteBranchService final : public RemoteBranchService {
+public:
+    using RemoteBranchService::RemoteBranchService;
+
+    RequestId requestBranches(const QString &repositoryUrl) override
+    {
+        const RequestId requestId = ++nextRequestId;
+        requestedUrls.append(repositoryUrl);
+        requestIds.append(requestId);
+        return requestId;
+    }
+
+    void cancelRequest(RequestId requestId) override
+    {
+        cancelledRequests.insert(requestId);
+    }
+
+    void complete(RequestId requestId, const RemoteBranchCatalog &catalog)
+    {
+        emit branchesReady(requestId, catalog);
+    }
+
+    void fail(RequestId requestId, const QString &message)
+    {
+        emit branchQueryFailed(requestId, message);
+    }
+
+    RequestId nextRequestId = 0;
+    QStringList requestedUrls;
+    QList<RequestId> requestIds;
+    QSet<RequestId> cancelledRequests;
+};
+
 class TestPresentation final : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
     void cardRoundTripsConfiguration();
     void cardEmitsChangeAndRemoveSignals();
     void cardRenumbersTitleAndBadge();
     void cardDisablesAllEditors();
+    void branchSelectorChoosesDefaultAndFiltersSuggestions();
+    void branchSelectorIgnoresStaleResultsAndPreservesManualText();
+    void branchSelectorUsesCustomRoundedChrome();
+    void childCardRequestsBranchesFromItsUrl();
     void firstLaunchCreatesOneCardAndUsesCompactSize();
     void restoresMultipleCardsWithoutSavingImmediately();
     void restoresSavedZeroCards();
@@ -54,8 +122,17 @@ private slots:
     void closeFlushesPendingSave();
     void reportsSaveFailureWithoutBlocking();
     void limitsValidationSummaryToThreeLines();
+    void completionResultOverridesPostCloneDirectoryValidation();
+    void failureUsesInlineStatus();
+    void cancellationDoesNotRequestSystemNotification();
+    void gitOutputHasResizableLargeArea();
     void renderSnapshot();
 };
+
+void TestPresentation::initTestCase()
+{
+    qRegisterMetaType<NotificationSeverity>();
+}
 
 CloneRequest savedRequest(const QString &destination, int childCount)
 {
@@ -120,6 +197,93 @@ void TestPresentation::cardDisablesAllEditors()
         QVERIFY(!edit->isEnabled());
     }
     QVERIFY(!card.findChild<QPushButton *>(QStringLiteral("removeChildButton"))->isEnabled());
+}
+
+void TestPresentation::branchSelectorChoosesDefaultAndFiltersSuggestions()
+{
+    FakeRemoteBranchService service;
+    BranchSelector selector(&service, nullptr, 5);
+    QSignalSpy branchSpy(&selector, &BranchSelector::branchChanged);
+    selector.setRepositoryUrl(QStringLiteral("https://example.com/repository.git"));
+    QTRY_COMPARE_WITH_TIMEOUT(service.requestedUrls.size(), 1, 1000);
+
+    RemoteBranchCatalog catalog;
+    catalog.defaultBranch = QStringLiteral("main");
+    catalog.branches = QStringList {QStringLiteral("main"), QStringLiteral("develop"),
+                                    QStringLiteral("feature/login"),
+                                    QStringLiteral("release/1.0")};
+    service.complete(service.requestIds.first(), catalog);
+
+    QCOMPARE(selector.branchText(), QStringLiteral("main"));
+    QCOMPARE(selector.suggestionCount(), 4);
+    QVERIFY(!branchSpy.isEmpty());
+    selector.completer()->setCompletionPrefix(QStringLiteral("login"));
+    QCOMPARE(selector.completer()->completionModel()->rowCount(), 1);
+    QCOMPARE(selector.completer()->completionModel()->index(0, 0).data().toString(),
+             QStringLiteral("feature/login"));
+    QCOMPARE(selector.completer()->filterMode(), Qt::MatchContains);
+}
+
+void TestPresentation::branchSelectorIgnoresStaleResultsAndPreservesManualText()
+{
+    FakeRemoteBranchService service;
+    BranchSelector selector(&service, nullptr, 5);
+    selector.setBranchText(QStringLiteral("manual/topic"));
+    selector.setRepositoryUrl(QStringLiteral("repository-a"));
+    QTRY_COMPARE_WITH_TIMEOUT(service.requestedUrls.size(), 1, 1000);
+    const RemoteBranchService::RequestId firstRequest = service.requestIds.last();
+    selector.setRepositoryUrl(QStringLiteral("repository-b"));
+    QTRY_COMPARE_WITH_TIMEOUT(service.requestedUrls.size(), 2, 1000);
+    const RemoteBranchService::RequestId secondRequest = service.requestIds.last();
+
+    service.complete(firstRequest,
+                     {QStringLiteral("old"), QStringList {QStringLiteral("old")}});
+    QCOMPARE(selector.suggestionCount(), 0);
+    QCOMPARE(selector.branchText(), QStringLiteral("manual/topic"));
+    QVERIFY(service.cancelledRequests.contains(firstRequest));
+
+    service.complete(secondRequest,
+                     {QStringLiteral("main"),
+                      QStringList {QStringLiteral("main"), QStringLiteral("feature/new")}});
+    QCOMPARE(selector.suggestionCount(), 2);
+    QCOMPARE(selector.branchText(), QStringLiteral("manual/topic"));
+}
+
+void TestPresentation::branchSelectorUsesCustomRoundedChrome()
+{
+    BranchSelector selector(nullptr);
+    selector.resize(260, 44);
+    selector.setBranchText(QStringLiteral("main"));
+    selector.addItem(QStringLiteral("main"));
+    selector.show();
+    QTest::qWait(30);
+
+    const QImage image = selector.grab().toImage();
+    QVERIFY(!image.isNull());
+    int darkRightEdgePixels = 0;
+    for (int y = 4; y < image.height() - 4; ++y) {
+        if (image.pixelColor(image.width() - 2, y).lightness() < 100) {
+            ++darkRightEdgePixels;
+        }
+    }
+    QCOMPARE(darkRightEdgePixels, 0);
+
+    selector.showPopup();
+    QVERIFY(selector.isPopupIndicatorExpanded());
+    selector.hidePopup();
+    QVERIFY(!selector.isPopupIndicatorExpanded());
+}
+
+void TestPresentation::childCardRequestsBranchesFromItsUrl()
+{
+    FakeRemoteBranchService service;
+    ChildRepositoryCard card(0, &service, nullptr);
+    card.setConfiguration({QStringLiteral("git@example.com:team/child.git"),
+                           QStringLiteral("feature/saved"), QStringLiteral("modules/child")});
+
+    QTRY_COMPARE_WITH_TIMEOUT(service.requestedUrls.size(), 1, 1000);
+    QCOMPARE(service.requestedUrls.first(), QStringLiteral("git@example.com:team/child.git"));
+    QCOMPARE(card.configuration().branch, QStringLiteral("feature/saved"));
 }
 
 void TestPresentation::firstLaunchCreatesOneCardAndUsesCompactSize()
@@ -241,6 +405,111 @@ void TestPresentation::limitsValidationSummaryToThreeLines()
     const QString summary = window.findChild<QLabel *>(QStringLiteral("validationSummary"))->text();
     QVERIFY(summary.split(QLatin1Char('\n')).size() <= 3);
     QVERIFY(summary.contains(QStringLiteral("另有")));
+}
+
+void TestPresentation::completionResultOverridesPostCloneDirectoryValidation()
+{
+    QTemporaryDir destination;
+    ControllableProcessRunner runner;
+    CloneController controller(&runner);
+    FakeConfigurationStore store;
+    store.stored = savedRequest(destination.path(), 0);
+    MainWindow window(&controller, &store);
+    window.show();
+    QSignalSpy notificationSpy(&window, &MainWindow::taskResultNotificationRequested);
+
+    window.findChild<QPushButton *>(QStringLiteral("startButton"))->click();
+    QVERIFY(runner.running);
+    const QString targetPath = destination.path() + QStringLiteral("/platform-workspace");
+    QVERIFY(QDir().mkpath(targetPath));
+    QFile marker(targetPath + QStringLiteral("/.git"));
+    QVERIFY(marker.open(QIODevice::WriteOnly));
+    marker.close();
+    runner.complete(0);
+
+    QWidget *statusCard = window.findChild<QWidget *>(QStringLiteral("statusCard"));
+    QCOMPARE(statusCard->property("statusState").toString(), QStringLiteral("success"));
+    QCOMPARE(window.findChild<QLabel *>(QStringLiteral("validationSummary"))->text(),
+             QStringLiteral("✓ 克隆完成"));
+    QVERIFY(window.findChild<QLabel *>(QStringLiteral("statusLabel"))->text().contains(targetPath));
+    QVERIFY(!window.findChild<QPlainTextEdit *>(QStringLiteral("gitOutputEdit"))->toPlainText().isEmpty());
+    QVERIFY(QApplication::activeModalWidget() == nullptr);
+    QCOMPARE(notificationSpy.size(), 1);
+    const QList<QVariant> notification = notificationSpy.first();
+    QCOMPARE(notification.at(0).toString(), QStringLiteral("GitCloneGui · 克隆完成"));
+    QVERIFY(notification.at(1).toString().contains(targetPath));
+    QVERIFY(notification.at(1).toString().contains(QStringLiteral("0 个子仓库")));
+    QCOMPARE(static_cast<int>(qvariant_cast<NotificationSeverity>(notification.at(2))),
+             static_cast<int>(NotificationSeverity::Information));
+}
+
+void TestPresentation::failureUsesInlineStatus()
+{
+    QTemporaryDir destination;
+    ControllableProcessRunner runner;
+    CloneController controller(&runner);
+    FakeConfigurationStore store;
+    store.stored = savedRequest(destination.path(), 0);
+    MainWindow window(&controller, &store);
+    window.show();
+    QSignalSpy notificationSpy(&window, &MainWindow::taskResultNotificationRequested);
+
+    window.findChild<QPushButton *>(QStringLiteral("startButton"))->click();
+    runner.complete(128);
+
+    QCOMPARE(window.findChild<QWidget *>(QStringLiteral("statusCard"))
+                 ->property("statusState").toString(),
+             QStringLiteral("error"));
+    QCOMPARE(window.findChild<QLabel *>(QStringLiteral("validationSummary"))->text(),
+             QStringLiteral("克隆失败"));
+    QVERIFY(QApplication::activeModalWidget() == nullptr);
+    QCOMPARE(notificationSpy.size(), 1);
+    const QList<QVariant> notification = notificationSpy.first();
+    QCOMPARE(notification.at(0).toString(), QStringLiteral("GitCloneGui · 克隆失败"));
+    QVERIFY(notification.at(1).toString().contains(QStringLiteral("父项目克隆失败")));
+    QCOMPARE(static_cast<int>(qvariant_cast<NotificationSeverity>(notification.at(2))),
+             static_cast<int>(NotificationSeverity::Critical));
+}
+
+void TestPresentation::cancellationDoesNotRequestSystemNotification()
+{
+    QTemporaryDir destination;
+    ControllableProcessRunner runner;
+    CloneController controller(&runner);
+    FakeConfigurationStore store;
+    store.stored = savedRequest(destination.path(), 0);
+    MainWindow window(&controller, &store);
+    QSignalSpy notificationSpy(&window, &MainWindow::taskResultNotificationRequested);
+
+    window.findChild<QPushButton *>(QStringLiteral("startButton"))->click();
+    QVERIFY(runner.running);
+    window.findChild<QPushButton *>(QStringLiteral("cancelButton"))->click();
+
+    QCOMPARE(notificationSpy.size(), 0);
+    QCOMPARE(window.findChild<QWidget *>(QStringLiteral("statusCard"))
+                 ->property("statusState").toString(),
+             QStringLiteral("normal"));
+}
+
+void TestPresentation::gitOutputHasResizableLargeArea()
+{
+    DummyProcessRunner runner;
+    CloneController controller(&runner);
+    FakeConfigurationStore store;
+    MainWindow window(&controller, &store);
+    window.show();
+    QTest::qWait(50);
+
+    QSplitter *splitter = window.findChild<QSplitter *>(QStringLiteral("executionSplitter"));
+    QWidget *logCard = window.findChild<QWidget *>(QStringLiteral("logCard"));
+    QVERIFY(splitter != nullptr);
+    QCOMPARE(splitter->count(), 2);
+    QVERIFY2(logCard->height() >= 280, qPrintable(QString::number(logCard->height())));
+    QVERIFY(splitter->handle(1) != nullptr);
+    QVERIFY(splitter->handle(1)->isEnabled());
+    QCOMPARE(window.findChild<QPlainTextEdit *>(QStringLiteral("gitOutputEdit"))
+                 ->document()->maximumBlockCount(),
+             10000);
 }
 
 void TestPresentation::renderSnapshot()

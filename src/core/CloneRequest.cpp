@@ -97,8 +97,18 @@ ValidationResult buildClonePlan(const CloneRequest &request)
     if (destinationInfo.exists() && destinationInfo.isDir() && isSingleDirectoryName(parentDirectory)) {
         destinationRoot = QDir::cleanPath(destinationInfo.absoluteFilePath());
         parentTarget = QDir::cleanPath(QDir(destinationRoot).absoluteFilePath(parentDirectory));
-        if (QFileInfo::exists(parentTarget)) {
-            result.errors.append(QStringLiteral("父项目目标目录已存在，应用不会覆盖或删除它：%1").arg(parentTarget));
+        const QFileInfo parentTargetInfo(parentTarget);
+        if (parentTargetInfo.exists() && !parentTargetInfo.isDir()) {
+            result.errors.append(QStringLiteral("父项目目标目录必须为空；当前路径已存在且不是目录：%1")
+                                     .arg(parentTarget));
+        } else if (parentTargetInfo.isDir()) {
+            const QDir targetDirectory(parentTarget);
+            const QFileInfoList entries = targetDirectory.entryInfoList(
+                QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
+            if (!entries.isEmpty()) {
+                result.errors.append(QStringLiteral("父项目目标目录必须为空；当前目录已包含内容：%1")
+                                         .arg(parentTarget));
+            }
         }
     }
 

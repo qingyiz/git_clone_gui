@@ -3,6 +3,7 @@ add_library(git_clone_application STATIC
     CloneController.h
     ConfigurationStore.h
     ProcessRunner.h
+    RemoteBranchService.h
 )
 
 target_include_directories(git_clone_application
