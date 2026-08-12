@@ -51,7 +51,11 @@ void TestCloneRequest::acceptsMultipleChildrenInOrder()
     QCOMPARE(result.plan.children.size(), 2);
     QCOMPARE(result.plan.children.at(0).targetPath,
              QDir::cleanPath(root.path() + QStringLiteral("/parent-project/modules/child-a")));
-    QCOMPARE(result.plan.children.at(1).command.arguments.at(2), QStringLiteral("feature/b"));
+    QCOMPARE(result.plan.children.at(1).command.arguments.at(3), QStringLiteral("feature/b"));
+    QCOMPARE(result.plan.parentCommand.arguments.count(QStringLiteral("--progress")), 1);
+    for (const ChildClonePlan &child : result.plan.children) {
+        QCOMPARE(child.command.arguments.count(QStringLiteral("--progress")), 1);
+    }
 }
 
 void TestCloneRequest::acceptsParentWithoutChildren()
@@ -160,9 +164,9 @@ void TestCloneRequest::keepsShellCharactersInSingleArguments()
     const ValidationResult result = buildClonePlan(request);
 
     QVERIFY(result.valid);
-    QCOMPARE(result.plan.parentCommand.arguments.at(4), request.parentRepositoryUrl);
-    QCOMPARE(result.plan.children.at(0).command.arguments.at(2), request.children.at(0).branch);
-    QCOMPARE(result.plan.children.at(0).command.arguments.size(), 6);
+    QCOMPARE(result.plan.parentCommand.arguments.at(5), request.parentRepositoryUrl);
+    QCOMPARE(result.plan.children.at(0).command.arguments.at(3), request.children.at(0).branch);
+    QCOMPARE(result.plan.children.at(0).command.arguments.size(), 7);
 }
 
 void TestCloneRequest::quotesPreviewForDisplay()

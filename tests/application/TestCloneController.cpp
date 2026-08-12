@@ -1,6 +1,7 @@
 #include "application/CloneController.h"
 
 #include <QDir>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -60,6 +61,9 @@ private slots:
     void parentFailureDoesNotStartChildren();
     void middleChildFailureStopsQueue();
     void rejectsConcurrentStartAndForwardsOutput();
+    void recordsElapsedTimeForEveryFinalOutcome_data();
+    void recordsElapsedTimeForEveryFinalOutcome();
+    void invalidRequestDoesNotRecordElapsedTime();
     void cancelTerminatesAndEventuallyKills();
     void startErrorReturnsToIdle();
 };
@@ -171,6 +175,58 @@ void TestCloneController::rejectsConcurrentStartAndForwardsOutput()
 
     QCOMPARE(runner.commands.size(), 1);
     QVERIFY(outputSpy.last().at(0).toString().contains(QStringLiteral("remote: test")));
+}
+
+void TestCloneController::recordsElapsedTimeForEveryFinalOutcome_data()
+{
+    QTest::addColumn<CloneController::Outcome>("expectedOutcome");
+    QTest::newRow("completed") << CloneController::Outcome::Completed;
+    QTest::newRow("failed") << CloneController::Outcome::Failed;
+    QTest::newRow("cancelled") << CloneController::Outcome::Cancelled;
+}
+
+void TestCloneController::recordsElapsedTimeForEveryFinalOutcome()
+{
+    QFETCH(CloneController::Outcome, expectedOutcome);
+    QTemporaryDir root;
+    FakeProcessRunner runner;
+    CloneController controller(&runner, nullptr, 10);
+    QSignalSpy outputSpy(&controller, &CloneController::logReceived);
+    QSignalSpy resultSpy(&controller, &CloneController::jobFinished);
+
+    QVERIFY(controller.start(requestFor(root.path(), 0)));
+    runner.output(QStringLiteral("Receiving objects: 10%\r"));
+    QVERIFY(outputSpy.last().at(0).toString().contains(QStringLiteral("Receiving objects: 10%")));
+    QVERIFY(resultSpy.isEmpty());
+
+    if (expectedOutcome == CloneController::Outcome::Completed) {
+        runner.complete(0);
+    } else if (expectedOutcome == CloneController::Outcome::Failed) {
+        runner.complete(128);
+    } else {
+        controller.cancel();
+        QTRY_COMPARE_WITH_TIMEOUT(resultSpy.size(), 1, 1000);
+    }
+
+    QCOMPARE(resultSpy.size(), 1);
+    QCOMPARE(resultSpy.at(0).at(0).value<CloneController::Outcome>(), expectedOutcome);
+
+    QString completeLog;
+    for (const QList<QVariant> &arguments : outputSpy) {
+        completeLog.append(arguments.at(0).toString());
+    }
+    const QRegularExpression elapsedPattern(QStringLiteral("总耗时：\\d+\\.\\d 秒"));
+    QCOMPARE(completeLog.count(elapsedPattern), 1);
+}
+
+void TestCloneController::invalidRequestDoesNotRecordElapsedTime()
+{
+    FakeProcessRunner runner;
+    CloneController controller(&runner);
+    QSignalSpy outputSpy(&controller, &CloneController::logReceived);
+
+    QVERIFY(!controller.start(CloneRequest {}));
+    QVERIFY(outputSpy.isEmpty());
 }
 
 void TestCloneController::cancelTerminatesAndEventuallyKills()

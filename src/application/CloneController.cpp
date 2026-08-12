@@ -60,6 +60,7 @@ bool CloneController::start(const CloneRequest &request)
         child.command.program = gitExecutable;
     }
     m_currentChildIndex = -1;
+    m_jobTimer.start();
     emit logReceived(QStringLiteral("父项目命令：%1\n").arg(commandPreview(m_plan.parentCommand)));
     return startStage(m_plan.parentCommand, State::CloningParent, QStringLiteral("正在克隆父项目…"));
 }
@@ -194,10 +195,16 @@ void CloneController::finish(Outcome outcome, const QString &message)
 {
     m_cancelTimer.stop();
     const QString parentTarget = m_plan.parentTargetPath;
+    QString elapsedLog;
+    if (m_jobTimer.isValid()) {
+        const double elapsedSeconds = static_cast<double>(m_jobTimer.elapsed()) / 1000.0;
+        elapsedLog = QStringLiteral("总耗时：%1 秒\n").arg(elapsedSeconds, 0, 'f', 1);
+        m_jobTimer.invalidate();
+    }
     setState(State::Idle);
     m_currentChildIndex = -1;
     emit statusChanged(message);
-    emit logReceived(QStringLiteral("\n%1\n").arg(message));
+    emit logReceived(QStringLiteral("\n%1\n%2").arg(message, elapsedLog));
     emit jobFinished(outcome, message, parentTarget);
 }
 

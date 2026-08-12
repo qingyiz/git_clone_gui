@@ -4,7 +4,7 @@
 >
 > 状态：执行中
 >
-> 最近更新：2026-08-11
+> 最近更新：2026-08-12
 
 ## 执行策略
 
@@ -360,6 +360,21 @@
   - 验证：本机 Qt 5.15.2 全新 install、6/6 CTest、self-contained delivery、严格 `codesign`、DMG 挂载与启动；对带 quarantine 的副本确认不再出现签名损坏；GitHub macOS arm64/Qt 6.8 job 与新标签 Release 原生验证。
   - 实施记录：根因由用户 Safari 下载截图与 `v0.1.0` DMG 原生复现确认：文件 SHA-256 正常且运行时闭包完整，但 `codesign --verify --deep --strict` 报资源未封装，主程序只有 `adhoc,linker-signed`。无证书分支现向同 Qt kit 的 `macdeployqt` 传入 `-codesign=-`，打包脚本改为无条件严格验证 Bundle；README 依据 Apple 官方说明区分 ad-hoc、Developer ID、公证与“仍要打开”。本机 Qt 5.15.2 Release 6/6 CTest、自包含 delivery、DMG 内外严格验证和实际启动通过；签名详情为 `Signature=adhoc`、存在 sealed resources。带 Safari quarantine 属性的副本仍通过严格签名结构验证，`spctl` 仅按预期因缺少 Developer ID 拒绝并要求人工覆盖。PR #5 run `31511847361` 在 macOS arm64/Qt 6.8 日志确认 ad-hoc Bundle、`valid on disk` 与 designated requirement，Windows 回归通过；标签 `v0.1.2` run `31512200305` 的 macOS、Windows、Publish GitHub Release 三个 job 全部成功。Release API 报告 DMG 约 24.2 MB、SHA-256 `0a59c74bb4ca2719fa771d8957b197ed4ff38b234c95ec5c239a2b0c646f4633`，Windows ZIP 约 22.7 MB，附件状态均为 `uploaded`。
 
+- [x] TASK-024：让大型仓库实时输出 Git 进度并记录任务总耗时
+  - 类型：required
+  - 需求：REQ-003 / AC-003.1、AC-003.6、AC-003.7；NFR-003、NFR-011
+  - 设计：DEC-001、DEC-016；ARCH-002、ARCH-003；BUILD-001、BUILD-004；PROP-016
+  - 单一变更原因：修复 GUI 管道环境中 Git 默认抑制 clone 进度造成的大仓库长时间无日志，并补充整个父+子任务的最终耗时。
+  - 模块/构建单元：`git_clone_core` 与 `git_clone_application`；测试 `test_clone_core`、`test_clone_controller`。
+  - 架构约束：ARCH-002、ARCH-003 / BUILD-001、BUILD-004；core 只生成结构化参数，application 只管理任务级单调计时，infrastructure 的 readyRead 适配与 presentation 日志控件保持不变。
+  - 依赖变化：无新增 target/link/include 边；application 仅新增 QtCore 已提供的 `QElapsedTimer`。
+  - 平台/交付物：平台无关运行时行为；macOS/Windows 既有 app 与发布包形态不变。
+  - 依赖：TASK-023。
+  - 修改范围：`src/core/CloneRequest.cpp`、`src/application/CloneController.*`、`tests/core/TestCloneRequest.cpp`、`tests/application/TestCloneController.cpp` 与 Spec 实施记录；不改 GitProcessRunner、MainWindow、CMake、部署或发布脚本。
+  - 产出：所有父/子 clone 命令显式 `--progress`；现有 readyRead 在阶段完成前即可转发进度；Completed/Failed/Cancelled 最终日志各打印一次一位小数总耗时。
+  - 验证：构建 `test_clone_core`/`test_clone_controller`；CTest 定向与 Debug 全量 6/6；参数计数、完成前输出顺序、三种 outcome 耗时格式/次数；静态确认无 shell 和无新增跨层依赖；重跑结构检查与 Spec 校验。
+  - 实施记录：根因确认是 `GitProcessRunner` 已经通过 `QProcess::readyRead` 实时转发 merged channels，但 Git 在 stderr 非终端时默认抑制 clone 传输进度。`CloneRequest` 现为父项目和每个子仓库的结构化参数各加入且仅加入一个 `--progress`，不引入 shell；`CloneController` 使用 QtCore `QElapsedTimer` 从有效任务准备启动父阶段时开始计时，在唯一 `finish()` 路径为 Completed/Failed/Cancelled 最终日志各追加一次一位小数的“总耗时：N.N 秒”，校验失败不产生耗时。core 测试覆盖父/子参数与元字符安全，controller fake runner 覆盖完成前输出转发、三种 outcome 的耗时格式/次数及无效输入；Debug 与 Release 全量 CTest 均 6/6 通过，真实 Git 父+2 子流程回归通过，两个 preset 的 `.app` 均重新链接成功。`git diff --check` 与 shell API 静态扫描通过，无新增 target/link 或跨层依赖。
+
 ## 执行波次
 
 | 波次 | 任务 | 并行性 | 完成后仓库状态 |
@@ -385,6 +400,7 @@
 | 19 | TASK-021 | 顺序 | 双平台 artifact 与 tag Release 流水线就绪 |
 | 20 | TASK-022 | 顺序 | 发布文档与 GitHub 原生交付证据闭环 |
 | 21 | TASK-023 | 顺序 | ad-hoc Bundle 签名结构有效且新 Release 不再被判为“已损坏” |
+| 22 | TASK-024 | 顺序 | 大仓库父/子 clone 实时产出进度且三种最终结果均记录一次总耗时 |
 
 ## 覆盖检查
 
@@ -392,7 +408,7 @@
 |---|---|---|---|
 | REQ-001 | TASK-001, TASK-004, TASK-006, TASK-010 | core 列表 + UI | 已完成 |
 | REQ-002 | TASK-002, TASK-003, TASK-006, TASK-007 | controller 队列 + 真实 Git | 已完成 |
-| REQ-003 | TASK-002, TASK-003, TASK-007, TASK-010 | controller + UI | 已完成 |
+| REQ-003 | TASK-002, TASK-003, TASK-007, TASK-010, TASK-024 | core 参数 + controller + UI | 已完成 |
 | REQ-004 | TASK-001, TASK-004, TASK-005, TASK-011 | Preset/CTest/bundle/README | 已完成 |
 | REQ-005 | TASK-009, TASK-010 | card/presentation tests | 已完成 |
 | REQ-006 | TASK-009, TASK-010, TASK-011, TASK-018 | snapshot + 人工检查 | 已完成 |
@@ -422,3 +438,4 @@
 - [x] 普通 run 提供两个 artifact，测试 `v*` 标签提供包含 DMG/ZIP 的 GitHub Release。
 - [x] 无 Secrets 的 unsigned 降级有明确证据；真实 Developer ID/notary 与 Authenticode 验证保持为配置对应 Secrets 后的条件式路径。
 - [x] TASK-023 完成，macOS ad-hoc Bundle 严格签名验证、quarantine 等价检查和新标签 Release 原生验证均通过。
+- [x] TASK-024 完成，PROP-016 有父/子 `--progress`、完成前输出转发和三种 outcome 总耗时证据。

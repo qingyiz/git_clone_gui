@@ -3,6 +3,7 @@
 #include "application/ProcessRunner.h"
 #include "core/CloneRequest.h"
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
 
@@ -62,6 +63,7 @@ private:
 
     ProcessRunner *m_runner;
     QTimer m_cancelTimer;
+    QElapsedTimer m_jobTimer;
     State m_state = State::Idle;
     ClonePlan m_plan;
     int m_currentChildIndex = -1;
