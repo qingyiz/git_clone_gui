@@ -158,7 +158,8 @@ ValidationResult buildClonePlan(const CloneRequest &request)
         if (!childUrl.isEmpty() && !childBranch.isEmpty() && !childTarget.isEmpty()) {
             result.plan.children.append({
                 {QStringLiteral("git"),
-                 {QStringLiteral("clone"), QStringLiteral("--branch"), childBranch,
+                 {QStringLiteral("clone"), QStringLiteral("--progress"),
+                  QStringLiteral("--branch"), childBranch,
                   QStringLiteral("--single-branch"), childUrl, childTarget},
                  parentTarget},
                 childTarget
@@ -174,7 +175,8 @@ ValidationResult buildClonePlan(const CloneRequest &request)
     result.plan.parentTargetPath = parentTarget;
     result.plan.parentCommand = {
         QStringLiteral("git"),
-        {QStringLiteral("clone"), QStringLiteral("--branch"), parentBranch,
+        {QStringLiteral("clone"), QStringLiteral("--progress"),
+         QStringLiteral("--branch"), parentBranch,
          QStringLiteral("--single-branch"), parentUrl, parentTarget},
         destinationRoot
     };

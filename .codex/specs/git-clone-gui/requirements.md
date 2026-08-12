@@ -6,7 +6,7 @@
 >
 > 状态：已更新
 >
-> 最近更新：2026-08-11
+> 最近更新：2026-08-12
 
 ## 事实与环境基线
 
@@ -34,6 +34,7 @@
 | FACT-020 | PR #2 的 Actions run `31506923442` 已在 macOS arm64 与 Windows x64 上完成 Qt 6.8 Release 构建、6/6 CTest、部署、unsigned 打包和 artifact 上传。 | 已验证 | GitHub Actions job/step API、artifact API | Windows 源码编译与两平台 unsigned 交付路径已有原生证据；真实签名、公证与 tag Release 仍待凭据/标签。 |
 | FACT-021 | Release `v0.1.0`/`v0.1.1` 的 DMG 校验和与 Bundle 依赖完整，但部署后的 `.app` 仅保留链接器 ad-hoc 签名；新增 Frameworks/PlugIns/Resources 后未重签，`codesign --verify --deep --strict` 报 `code has no resources but signature indicates they must be present`，Safari quarantine 下被 Gatekeeper 显示为“已损坏”。 | 已验证 | 用户截图；下载文件 SHA-256；DMG 挂载、`codesign`/`spctl` 原生复现 | 无 Developer ID 路径也必须重签整个 Bundle 并严格验证；可信无警告分发仍需要 Developer ID 与公证。 |
 | FACT-022 | 修复后的 PR #5 run `31511847361` 与标签 `v0.1.2` run `31512200305` 均在 macOS arm64/Qt 6.8 完成 ad-hoc Bundle 重签、6/6 CTest、严格 `codesign`、DMG 打包和上传；标签 run 同时完成 Windows 与 Release job。 | 已验证 | Actions job/step 日志；Release asset API | 发布后的 DMG 不再包含失效 Bundle 签名；无 Developer ID 时 Gatekeeper 仍会要求用户明确覆盖。 |
+| FACT-023 | `GitProcessRunner` 已通过 `QProcess::readyRead` 异步转发 merged channels，但 `CloneRequest` 生成的 `git clone` 命令未携带 `--progress`；Git 在标准错误不是终端时默认不持续输出进度。 | 已验证 | `src/infrastructure/GitProcessRunner.cpp`、`src/core/CloneRequest.cpp`；Git 2.44.0 `git clone -h`/行为探测 | 实时链路无需重构；父/子 clone 显式启用进度输出，并在最终日志增加任务总耗时。 |
 
 ### 技术与运行环境调查
 
@@ -52,7 +53,7 @@
 
 ### 问题陈述
 
-既有多仓库、配置恢复、图标和自包含 Bundle 已完成。2026-08-11 的追加反馈表明，仓库分支仍需靠记忆输入，克隆完成后的系统弹框与随即出现的“目录已存在”校验会造成割裂，右侧固定布局也让 Git 输出空间不足。
+既有多仓库、配置恢复、分支发现、跨平台打包与发布已完成。2026-08-12 的追加反馈表明，大型父仓库在完成前看不到持续 Git 传输日志，用户无法判断任务是否仍在推进，最终日志也缺少本次克隆的总耗时。
 
 ### 目标与成功指标
 
@@ -70,6 +71,7 @@
 - GitHub 每次推送/PR 在 macOS arm64 与 Windows x64 原生 runner 上构建、测试并生成可下载 artifact；推送 `v*` 标签时自动创建 Release 并附加 DMG/ZIP。
 - macOS 发布包为包含自包含 `.app` 的 DMG；配置 Developer ID 与公证 Secrets 后必须签名、启用 Hardened Runtime、提交 Apple 公证并 stapling。
 - Windows 发布包为包含 `.exe`、Qt DLL、platform plugin 与 MSVC runtime 的便携 ZIP；配置 PFX Secret 后必须 Authenticode 签名主程序。
+- 父项目和子仓库克隆在非终端 GUI 管道中仍应持续输出 Git 传输进度；任务最终成功、失败或取消时打印总耗时。
 
 ### 非目标
 
@@ -113,7 +115,7 @@
 2. 用户填写父项目，并通过“添加子仓库”新增卡片或删除不需要的卡片。
 3. 右侧预览随输入更新，错误以紧凑摘要呈现，不用整块红字占据主界面。
 4. 用户点击开始；系统保存当前配置、冻结控件，先克隆父项目，再按卡片顺序逐个克隆子仓库。
-5. 任一阶段失败/取消即停止；全部阶段成功显示完成与父项目路径。
+5. 克隆过程中 Git 传输进度随输出到达实时追加；任一阶段失败/取消即停止，最终结果同时显示任务总耗时。
 6. 用户退出再打开，表单和卡片恢复，日志保持为空。
 7. 开发者构建 Release 并安装后，得到带图标、携带 Qt 运行时、可直接启动的 macOS `.app`。
 8. 用户输入仓库 URL 后，从默认/常用优先的分支列表中选择，或输入关键词筛选后继续手工填写。
@@ -170,6 +172,8 @@
 - AC-003.3：启动错误、异常退出或非零退出码应停止队列，显示具体阶段与错误并保留文件。
 - AC-003.4：取消先 terminate，3 秒未退出再 kill；结束后恢复所有配置控件。
 - AC-003.5：关闭运行中窗口应先取消当前 Git 进程再退出。
+- AC-003.6：父项目和每个子仓库的 `git clone` 命令应显式启用进度输出，使标准错误连接 GUI 管道而非终端时仍能持续产生 Git 传输进度；应用应通过既有异步信号链按到达顺序立即追加这些输出，不等待阶段结束。
+- AC-003.7：从有效克隆任务开始计时；无论最终成功、失败或取消，最终会话日志都应包含一次格式稳定、精度到 0.1 秒的“总耗时：N.N 秒”，无效输入或找不到 Git 而未启动任务时不计时。
 
 ### REQ-004：提供可复现构建与使用入口
 
@@ -306,7 +310,7 @@
 |---|---|---|---|
 | NFR-001 | 安全 | 所有 Git 阶段使用结构化 QProcess 参数，不使用 shell/system | 静态检查与元字符测试 |
 | NFR-002 | 可靠性 | 单实例内最多一个任务；父失败或任一子失败不启动后续项 | fake runner 状态机与真实 Git 集成测试 |
-| NFR-003 | 响应性 | Git 与配置保存不阻塞 UI；卡片增删即时反馈 | 异步代码审查与 UI 测试 |
+| NFR-003 | 响应性 | Git 与配置保存不阻塞 UI；Git clone 在非终端管道中显式启用进度并按 `readyRead` 到达实时追加；卡片增删即时反馈 | 命令计划测试、异步代码审查与 controller/UI 测试 |
 | NFR-004 | 兼容性 | 使用 Qt 5.15/6 共有 Core/Widgets/Settings API | Qt 5 构建 + Qt 6 API 审查 |
 | NFR-005 | 隐私 | 只持久化表单字段；不保存日志或独立凭据；明示 URL 中 Token 风险 | store 单元测试与 README 审查 |
 | NFR-006 | 可维护性 | MainWindow 不拥有单卡字段构建细节；卡片和设置适配器分别独立 | 结构检查和 include/link 审查 |
@@ -314,6 +318,7 @@
 | NFR-008 | 远程查询 | 每个分支查询 15 秒超时，设置 `GIT_TERMINAL_PROMPT=0`，结果按请求 ID 隔离并进行会话缓存 | 本地远程测试、超时与过期结果测试 |
 | NFR-009 | 通知可靠性 | 系统通知是最终 Completed/Failed 后的附加副作用；不支持/无权限时静默降级，不能阻塞 UI、改变 outcome 或重复发送 | 完成/失败/取消信号测试与 Qt tray capability 审查 |
 | NFR-010 | 发布安全 | Actions 默认只读；仅 release job 写 contents；第三方 Actions 固定 commit SHA；证书只从 Secrets 注入临时文件/钥匙串并在 job 结束销毁 | workflow 静态审查、GitHub run 日志、签名脚本审查 |
+| NFR-011 | 可观测性 | 每个已启动任务的最终日志在 Completed/Failed/Cancelled 三种结果下均且仅包含一次单调计时得到的总耗时，显示精度 0.1 秒 | fake runner 三种结果测试与日志计数断言 |
 
 ## 边界、错误与状态转换
 
@@ -322,6 +327,7 @@
 | 0 个子仓库 | 只克隆父项目并成功结束 | REQ-001, REQ-002 |
 | 20 个子仓库 | 卡片内部滚动，按顺序执行，UI 不同步阻塞 | REQ-002, REQ-005, NFR-003 |
 | 中间子仓库失败 | 停止后续队列，保留父及已完成/部分目录 | REQ-002, REQ-003 |
+| 大型父仓库长时间传输 | 通过 `--progress` 让 Git 在 GUI 管道中持续产出进度，异步追加而不等待父阶段结束 | REQ-003, NFR-003 |
 | 两张卡片使用相同目标路径 | 校验失败并指出卡片序号 | REQ-001 |
 | 删除全部卡片后重启 | 仍为 0 张，不自动补回默认卡片 | REQ-005, REQ-007 |
 | 设置文件不可写 | 显示非阻塞提示，当前输入仍可使用 | REQ-007 |
@@ -335,6 +341,7 @@
 | 克隆完成后目标目录变为非空 | 页内完成反馈保持可见；用户再次编辑时恢复实时校验 | REQ-010 |
 | 父项目或任一子仓库失败 | 保留页内结果与日志，并发送一次“克隆失败”系统通知 | REQ-003, REQ-010, NFR-009 |
 | 用户主动取消 | 保留页内结果与日志，不发送系统通知 | REQ-003, REQ-010, NFR-009 |
+| 成功、失败或取消结束 | 最终会话日志各追加且仅追加一次总耗时；未实际启动的校验失败不打印耗时 | REQ-003, NFR-011 |
 | 系统通知不可用或权限被拒绝 | 静默保留页内最终状态，不影响 Completed/Failed 结果 | REQ-010, NFR-009 |
 | 签名 Secrets 缺失 | CI 继续构建测试包；macOS Bundle 以 ad-hoc identity 完整重签并严格验证，step summary 明确无 Developer ID 信任链；不执行公证/Authenticode | REQ-011, NFR-007, NFR-010 |
 | 只有部分 macOS Secrets | 不进入签名/公证路径，避免生成看似正式但无法验证的包 | REQ-011, NFR-010 |
@@ -389,6 +396,7 @@
 | ANA-014 | 平台范围变化 | REQ-011 | 原 Spec 明确排除 Windows/签名/Release，现需求与其冲突 | 重新打开 requirements，新增双平台原生 runner、部署包、可选签名与标签 Release 契约，不改变业务架构 |
 | ANA-015 | 凭据边界 | REQ-011 | 当前只有 Apple Development 证书，不能用于站外可信分发/公证；Windows 证书未知 | workflow 无 Secrets 时产出测试包，有完整 Secrets 时严格签名验证；文档明确证书申请步骤 |
 | ANA-016 | macOS 交付回归 | REQ-011 | `macdeployqt` 添加资源与嵌套代码后保留了失效的链接器 ad-hoc 签名；只检查文件结构和启动、不执行严格 `codesign`，未发现 Safari 下载后的 Gatekeeper “已损坏” | 无 Developer ID 时调用 `macdeployqt -codesign=-` 重签全部嵌套代码；打包脚本无条件执行严格 Bundle 验证，并用带 quarantine 的副本验证系统行为 |
+| ANA-017 | 实时输出根因 | REQ-003 | `QProcess::readyRead` 已实时读取，但 Git 检测到 stderr 非终端后默认抑制 clone 进度，造成大型父仓库完成前近似无日志 | 在 core 生成的父/子 `git clone` 参数中显式加入 `--progress`；controller 使用单调计时器统计整个任务并在统一 finish 路径打印耗时 |
 
 ## 需求追踪
 
@@ -396,7 +404,7 @@
 |---|---|---|
 | REQ-001 | AC-001.1～AC-001.5 | core 列表校验测试、UI 测试 |
 | REQ-002 | AC-002.1～AC-002.6 | controller 队列测试、真实 Git 多仓库测试 |
-| REQ-003 | AC-003.1～AC-003.5 | controller 回归、GUI 冒烟 |
+| REQ-003 | AC-003.1～AC-003.7 | core 命令参数测试、controller 实时转发/三种结果耗时回归、GUI 冒烟 |
 | REQ-004 | AC-004.1～AC-004.4 | 双 preset、CTest、bundle 验证、README |
 | REQ-005 | AC-005.1～AC-005.4 | presentation 测试与视觉检查 |
 | REQ-006 | AC-006.1～AC-006.5 | 对象/尺寸测试、截图人工检查 |

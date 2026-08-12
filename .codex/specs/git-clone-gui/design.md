@@ -8,24 +8,25 @@
 >
 > 状态：已更新
 >
-> 最近更新：2026-08-11
+> 最近更新：2026-08-12
 
 ## 设计摘要
 
-- 目标：在既有可保存、多仓库、自包含 macOS 应用上增加远程分支搜索，并优化目录、结果和日志体验。
-- 覆盖行为：REQ-001～REQ-010。
-- 核心方案：application 新增独立远程分支查询 port；infrastructure 用独立 `QProcess` 并发执行 `git ls-remote --symref`；presentation 用可编辑 `BranchSelector` 提供下拉和包含式搜索；core 允许已存在空目标目录；执行区改为可拖动纵向 splitter 与页内结果状态。
-- 模块/构建边界：ARCH-001～ARCH-008 / BUILD-001～BUILD-007。
+- 目标：在既有多仓库克隆与交付能力上，让大型仓库的 Git 传输进度实时可见，并在任务结束时打印总耗时。
+- 覆盖行为：REQ-001～REQ-011，当前增量聚焦 REQ-003。
+- 核心方案：core 为所有 `git clone` 计划显式加入 `--progress`，保留 `GitProcessRunner::readyRead` 异步转发；application 的 `CloneController` 用 `QElapsedTimer` 从有效任务开始统计父+全部子仓库总耗时，并在统一 finish 路径输出。
+- 模块/构建边界：ARCH-001～ARCH-009 / BUILD-001～BUILD-008；不新增 target 或依赖边。
 
 ## 代码库调查
 
 | 证据类型 | 证据 | 已验证事实 | 对设计的影响 |
 |---|---|---|---|
 | 当前结构 | `inspect_structure.py` | 实施后 29 个源文件；MainWindow 361 行、UI 构建 284 行；五层 target 保持 | 新 service/selector 未使 MainWindow 越过约 420 行预算，资源/部署仍归 app target |
-| 当前 core | `CloneRequest.h/.cpp` | 已使用 `QList<ChildRepositoryRequest/Plan>` | 本轮不修改 |
-| 当前 application | `CloneController.cpp` | 已用 currentChildIndex 串行推进 0～N 子队列 | 本轮不修改 |
+| 当前 core | `CloneRequest.h/.cpp` | 已使用 `QList<ChildRepositoryRequest/Plan>`；父/子 clone 均未传 `--progress` | 命令计划增加显式进度参数，保持结构化执行与顺序不变 |
+| 当前 application | `CloneController.cpp` | 已用 currentChildIndex 串行推进 0～N 子队列，所有结果汇入 `finish()` | 在有效任务开始时启动单调计时，在统一 finish 路径追加一次总耗时 |
 | 当前 presentation | snapshot、`MainWindow*.cpp` | 双栏卡片界面与集中 QSS 已完成 | 图标沿用其蓝色 “G” 视觉语言 |
-| 当前 infrastructure | `GitProcessRunner`、`QSettingsConfigurationStore` | Git 与配置适配均已完成 | 本轮不修改 |
+| 当前 infrastructure | `GitProcessRunner`、`QSettingsConfigurationStore` | `QProcess::MergedChannels` + `readyRead` 已按到达异步转发；问题不在读取链路 | 本轮不修改 runner，避免无依据重构 |
+| Git clone 进度 | Git 2.44.0 行为与 `git clone -h` | stderr 非终端时默认可能抑制传输进度，`--progress` 可强制输出 | 父/子计划统一显式传参，由现有 merged-channel readyRead 实时显示 |
 | 工具链 | CMake cache/既有回归 | Qt 5.15.2、macOS arm64 可构建 | 使用 Qt 5.15/6 公共 API |
 | 当前 Bundle | `du`、`plutil`、`find`、`otool` | Debug 约 524 KB；`CFBundleIconFile` 为空；无 Resources/Frameworks/PlugIns | 现状只是开发构建物，不是最终部署产物 |
 | 部署工具 | `/Users/qingyizhu/Qt5.15.2/bin/macdeployqt -h` | 当前 kit 的官方工具可收集 Framework 与插件 | 安装阶段调用对应 kit 工具生成自包含 Bundle |
@@ -55,6 +56,7 @@
 - 图标保留 SVG 源文件并提交生成的 `.icns`；开发 Bundle 可保持轻量，安装树才执行 Qt runtime 部署。
 - 分支查询不复用克隆 runner、不触发 shell、不持久化分支清单；请求 ID、超时和 URL 快照共同隔离过期结果。
 - 结果反馈优先于克隆完成后自动发生的重新校验；用户再次编辑任一配置时才恢复校验视觉状态。
+- clone 命令计划负责声明 `--progress`；runner 只转发字节，controller 只统计整个任务耗时，职责不跨层。
 
 ## 方案比较
 
@@ -189,6 +191,14 @@
 - 代价：无证书 Release 仍会被 Gatekeeper 识别为未知开发者，首次运行需要用户在“系统设置 → 隐私与安全性”选择“仍要打开”；只有 Developer ID + 公证能实现可信无覆盖步骤分发。
 - 被否决方案：跳过 `codesign` 检查继续上传、让用户执行 `xattr -dr` 清除系统隔离、只重签主 executable、把 Apple Development 证书冒充站外分发证书。
 
+### DEC-016：显式启用 Git 进度并由 controller 统计任务总耗时
+
+- 上下文与需求：REQ-003 / AC-003.1、AC-003.6、AC-003.7，NFR-003、NFR-011；FACT-023。
+- 决策：`CloneRequest` 为父项目和所有子仓库命令统一生成 `git clone --progress --branch ... --single-branch ...`；`GitProcessRunner` 继续使用 merged channels 的 `readyRead` 即时转发。`CloneController` 在输入与 Git 可执行文件检查通过后、启动父阶段前启动 `QElapsedTimer`，在 Completed/Failed/Cancelled 共用 `finish()` 中计算毫秒差并追加一次 `总耗时：%1 秒`，固定一位小数。
+- 理由：问题根因是 Git 的非终端输出策略，而不是 Qt 事件链；显式参数可跨 macOS/Windows 保持一致。单调计时不受系统时钟调整影响，统一 finish 路径天然覆盖三种最终结果并避免重复。
+- 代价：Git 的进度通常使用 `\r` 更新，同一日志区域可能保留较密集的进度文本；这是保留原始到达顺序和诊断信息的可接受代价。
+- 被否决方案：周期性轮询磁盘推算百分比（不准确且增加 I/O）、用伪终端欺骗 Git（跨平台复杂）、在 MainWindow 用墙上时间计时（结果语义泄漏到表示层）。
+
 ## 总体架构
 
 ```mermaid
@@ -251,6 +261,8 @@ flowchart LR
 - runner 同时最多一个进程；controller 只在 exit 0 后推进。
 - currentChildIndex 仅在 CloningChild 有效；finish 时复位。
 - 取消 timer 与旧实现一致。
+- 父/子命令计划均显式包含 `--progress`；runner 继续通过 `readyRead` 原样转发 merged channels，不缓存到阶段结束。
+- controller 的任务级单调计时覆盖父阶段和全部子阶段，只在有效任务实际准备启动后开始，并在唯一 `finish()` 路径消费一次。
 
 ### ARCH-004：表示层分为页面与单卡组件
 
@@ -311,8 +323,8 @@ flowchart LR
 
 ### BUILD-004：测试所有权扩展
 
-- `test_clone_core`：0～N 计划、重复/逃逸路径。
-- `test_clone_controller`：多项队列、0 项、失败门控、取消。
+- `test_clone_core`：0～N 计划、重复/逃逸路径、父/子 clone 的 `--progress` 参数。
+- `test_clone_controller`：多项队列、0 项、失败门控、取消、输出即时转发以及 Completed/Failed/Cancelled 最终耗时一次性记录。
 - `test_configuration_store`：临时 INI 路径往返、0 项、特殊字符。
 - `test_presentation`：卡片增删/重编号、配置恢复、摘要、默认尺寸，并可输出 snapshot。
 - `test_git_clone_workflow`：真实父 + 至少 2 个子仓库。
@@ -605,12 +617,18 @@ save debounce:
 - 属性：Secrets 不完整时 macOS 只执行并声明 ad-hoc Bundle 签名，不声称 Developer ID 信任或公证；进入可信 signed path 后任何导入、timestamp、签名、公证、staple 或 verify 失败都会使 job 失败，因而 Release 不会发布签名结构失效的包或把 ad-hoc 包标称为可信签名包。
 - 验证：workflow 条件/summary 审查、无 Secret run 的 ad-hoc identity 与严格验证日志、配置 Secret 后的 `codesign`/`spctl`/`notarytool`/`signtool` 日志。
 
+### PROP-016：实时进度与任务耗时可观测
+
+- 来源：REQ-003 / AC-003.1、AC-003.6、AC-003.7，NFR-003、NFR-011。
+- 属性：任意有效的 0～N 子仓库计划中，父命令与每条子命令都恰好包含一个 `--progress`；runner 在任务运行中产生的任意输出都在完成信号前被 controller 原样转发。每个最终 Completed、Failed 或 Cancelled 结果的会话日志恰好包含一次匹配 `总耗时：\d+\.\d 秒` 的行，无效请求不包含该行。
+- 验证：core 参数计数测试；fake runner 在完成前输出的信号顺序断言；controller 三种 outcome 的耗时格式/计数测试。
+
 ## 测试策略
 
 | 行为/属性 | 层级 | 场景 | 证据 |
 |---|---|---|---|
 | REQ-001 / PROP-001,003 | core | 0/1/N、重复/逃逸、元字符、预览顺序 | `test_clone_core` |
-| REQ-002,003 / PROP-002,004 | application | 0/多项成功、中间失败、取消、互斥 | `test_clone_controller` |
+| REQ-002,003 / PROP-002,004,016 | core/application | 父/子显式 progress、0/多项成功、中间失败、取消、互斥、完成前输出转发、三种结果总耗时 | `test_clone_core` + `test_clone_controller` |
 | REQ-007 / PROP-005 | infrastructure | no config、0/N、特殊字符、覆盖 | `test_configuration_store` |
 | REQ-005,006 / PROP-006 | presentation | add/remove/renumber、restore、尺寸、摘要、snapshot | `test_presentation` + 视觉检查 |
 | REQ-002,004 | integration/delivery | 父+2 子真实 clone、preset、bundle、launch | CTest + delivery script |
@@ -626,7 +644,7 @@ save debounce:
 |---|---|---|---|---|---|
 | REQ-001 | CloneRequest/MainWindow | ARCH-002, ARCH-004 | DEC-005 | PROP-001,003,006 | core/UI |
 | REQ-002 | CloneController/Runner | ARCH-002, ARCH-003 | DEC-001,002,005 | PROP-002～004 | controller/integration |
-| REQ-003 | Controller/MainWindow | ARCH-003, ARCH-004 | DEC-002,004 | PROP-004 | controller/UI |
+| REQ-003 | CloneRequest/Controller/Runner/MainWindow | ARCH-002, ARCH-003, ARCH-004 | DEC-001,002,004,016 | PROP-004,016 | core/controller/UI |
 | REQ-004 | CMake/app/README | BUILD-001～004 | DEC-003 | 不适用 | build/delivery |
 | REQ-005 | ChildRepositoryCard/MainWindow | ARCH-004, ARCH-006 | DEC-005,007 | PROP-006 | presentation |
 | REQ-006 | MainWindow/QSS | ARCH-004, ARCH-006 | DEC-007 | PROP-006 | snapshot/人工 |
