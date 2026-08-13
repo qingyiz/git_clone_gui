@@ -538,7 +538,7 @@
   - 修改范围：CMake/app/MainWindow/presentation test、README、release workflow、`docs/releases/v0.1.4.md` 和 Spec；不改克隆/扫描/分支业务行为。
   - 产出：侧栏“版本 0.1.4”、一致 Bundle/runtime 版本、中文 Release 正文、提交/main push/tag push 与两平台 Release。
   - 验证：Debug/Release CTest、运行时 UI、Info.plist、自包含交付、workflow YAML/脚本审查、GitHub Actions 三个 job、Release API 正文与附件。
-  - 实施记录：线上证据待标签流水线闭环。根 CMake project 已设为 0.1.4 并以 app 私有编译定义注入运行时；MainWindow 读取 applicationVersion，在侧栏显示“版本 0.1.4”；Debug/Release 编译定义与 Info.plist 的 short/build version 均为 0.1.4。新增 `docs/releases/v0.1.4.md`，release job checkout 标签并优先使用同名说明文件，未来标签缺失文件时回退自动说明。Ruby YAML、Bash 语法和 diff check 通过；Qt 5.15.2 Debug/Release 全部 11/11 CTest 通过。GitHub Actions 与 Release API 证据将在标签 workflow 完成后补记。
+  - 实施记录：线上证据待标签流水线闭环。根 CMake project 已设为 0.1.4 并以 app 私有编译定义注入运行时；MainWindow 读取 applicationVersion，在侧栏显示“版本 0.1.4”；Debug/Release 编译定义与 Info.plist 的 short/build version 均为 0.1.4。新增 `docs/releases/v0.1.4.md`，release job checkout 标签并优先使用同名说明文件，未来标签缺失文件时回退自动说明。Ruby YAML、Bash 语法和 diff check 通过；Qt 5.15.2 Debug/Release 全部 11/11 CTest 通过。首轮标签 run `31720507955` 暴露 Qt 6.8 对 `findChild<RepositoryTree *>` 的元对象静态断言，macOS/Windows 均在同一测试编译点失败；专用控件补充 `Q_OBJECT` 后重新执行本地全量回归并更新标签。GitHub Actions 与 Release API 最终证据将在重跑完成后补记。
 
 ## 执行波次
 

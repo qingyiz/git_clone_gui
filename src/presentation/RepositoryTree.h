@@ -16,6 +16,8 @@ enum RepositoryTreeDataRole {
 };
 
 class RepositoryTree final : public QTreeWidget {
+    Q_OBJECT
+
 public:
     explicit RepositoryTree(QWidget *parent = nullptr);
 
