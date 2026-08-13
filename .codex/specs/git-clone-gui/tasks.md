@@ -525,7 +525,7 @@
   - 验证：正确性/取消/快速重扫测试；三次 QElapsedTimer 性能中位数；真实工作区计时；Debug/Release 全 CTest、delivery/启动、结构与 Spec 校验。
   - 实施记录：基线确认原 worker 在 10,000 目录夹具三次总测试约 1.76～2.26s，真实 `/Users/qingyizhu/workspace` 57,327 目录扫描三次为 18.023/18.013/18.019s、均发现 17 仓库。移除逐目录 canonical/visited；macOS/Linux 私有 helper 通过 `opendir/readdir` 复用 `d_type`，仅 `DT_UNKNOWN` 回退 `lstat`，一次读取同时识别子目录与 `.git` 文件/目录；Windows/其他平台保留 Qt `entryList`。不使用 shell、不忽略普通目录，cancel、不可读计数、symlink 排除、嵌套发现和最终稳定排序不变。优化后 10,000 目录三次扫描中位数 146ms，较约 1.78s 基线降低约 91.8% 且低于 1.5s；真实工作区三次为 5.229/5.052/5.032s，中位数 5.052s，较 18.019s 降低约 72.0%，仍发现相同 17 仓库。完整正确性、Debug/Release 与交付证据见最终验证。
 
-- [ ] TASK-035：统一 `0.1.4` 版本并发布带说明的 GitHub Release
+- [x] TASK-035：统一 `0.1.4` 版本并发布带说明的 GitHub Release
   - 类型：required
   - 需求：REQ-011 / AC-011.8～AC-011.9
   - 设计：DEC-027；ARCH-009；BUILD-003、BUILD-005、BUILD-008；PROP-027
@@ -538,7 +538,7 @@
   - 修改范围：CMake/app/MainWindow/presentation test、README、release workflow、`docs/releases/v0.1.4.md` 和 Spec；不改克隆/扫描/分支业务行为。
   - 产出：侧栏“版本 0.1.4”、一致 Bundle/runtime 版本、中文 Release 正文、提交/main push/tag push 与两平台 Release。
   - 验证：Debug/Release CTest、运行时 UI、Info.plist、自包含交付、workflow YAML/脚本审查、GitHub Actions 三个 job、Release API 正文与附件。
-  - 实施记录：线上证据待标签流水线闭环。根 CMake project 已设为 0.1.4 并以 app 私有编译定义注入运行时；MainWindow 读取 applicationVersion，在侧栏显示“版本 0.1.4”；Debug/Release 编译定义与 Info.plist 的 short/build version 均为 0.1.4。新增 `docs/releases/v0.1.4.md`，release job checkout 标签并优先使用同名说明文件，未来标签缺失文件时回退自动说明。Ruby YAML、Bash 语法和 diff check 通过；Qt 5.15.2 Debug/Release 全部 11/11 CTest 通过。首轮标签 run `31720507955` 暴露 Qt 6.8 对 `findChild<RepositoryTree *>` 的元对象静态断言，macOS/Windows 均在同一测试编译点失败；专用控件补充 `Q_OBJECT` 后重新执行本地全量回归并更新标签。GitHub Actions 与 Release API 最终证据将在重跑完成后补记。
+  - 实施记录：根 CMake project 已设为 0.1.4 并以 app 私有编译定义注入运行时；MainWindow 读取 applicationVersion，在侧栏显示“版本 0.1.4”；Debug/Release 编译定义与 Info.plist 的 short/build version 均为 0.1.4。新增 `docs/releases/v0.1.4.md`，release job checkout 标签并优先使用同名说明文件，未来标签缺失文件时回退自动说明。Ruby YAML、Bash 语法和 diff check 通过；Qt 5.15.2 Debug/Release 全部 11/11 CTest 通过，自包含安装 Bundle、ad-hoc 严格签名与 0.1.4 plist 验证通过。首轮标签 run `31720507955` 暴露 Qt 6.8 对 `findChild<RepositoryTree *>` 的元对象静态断言，专用控件补充 `Q_OBJECT` 后本机两套 11/11 回归通过。修复标签 run `31720858555` 的 macOS arm64、Windows x64 与 Publish GitHub Release 三个 job 全部成功；公开 Release `v0.1.4` 正文与说明文件一致。Release API 报告 DMG 23,953,384 bytes、SHA-256 `ef78bea4e1a890c277e3b7e7351327c8c1eae9900564eefd94dcf83cd16bbfb4`，Windows ZIP 22,786,291 bytes、SHA-256 `112a3254c66b8624f1ee41e0f301cdbb7cb62d08a44cd6871ec987bc0fbbcd1a`，两附件状态均为 `uploaded`。
 
 ## 执行波次
 
@@ -592,7 +592,7 @@
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
-| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件、ad-hoc Bundle 严格验证 | 执行中 |
+| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件、ad-hoc Bundle 严格验证 | 已完成 |
 | REQ-012 | TASK-027, TASK-028, TASK-032 | navigation store/presentation、snapshot、运行中切页/关闭 | 已完成 |
 | REQ-013 | TASK-025, TASK-026, TASK-028～TASK-031, TASK-033～TASK-034 | contract、扫描/Git 集成与性能、工作目录存储/自动扫描、工作树风险、页面 fake service、自绘树与全量交付回归 | 已完成 |
 
@@ -623,4 +623,4 @@
 - [x] TASK-029 完成，AC-013.10～AC-013.12 / PROP-021 有交互、像素与 snapshot 证据。
 - [x] TASK-030～TASK-031 完成，AC-013.13～AC-013.17 / PROP-022～PROP-023 有存储、真实 Git、UI 语义与交付证据。
 - [x] TASK-032～TASK-034 完成，AC-012.5、AC-013.13、AC-013.18 / PROP-024～PROP-026 有导航存储、启动自动扫描、性能与交付证据。
-- [ ] TASK-035 完成，AC-011.8～AC-011.9 / PROP-027 有版本、UI、Bundle、Actions 与 Release API 证据。
+- [x] TASK-035 完成，AC-011.8～AC-011.9 / PROP-027 有版本、UI、Bundle、Actions 与 Release API 证据。
