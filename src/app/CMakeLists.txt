@@ -29,6 +29,11 @@ target_link_libraries(GitCloneGui
         ${QT_PACKAGE}::Widgets
 )
 
+target_compile_definitions(GitCloneGui
+    PRIVATE
+        GIT_CLONE_GUI_VERSION="${PROJECT_VERSION}"
+)
+
 set_target_properties(GitCloneGui PROPERTIES
     OUTPUT_NAME "GitCloneGui"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

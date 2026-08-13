@@ -1,11 +1,12 @@
 # GitCloneGui：多仓库克隆工具
 
-一个紧凑的 Qt Widgets 桌面工具：先克隆父项目，再按卡片顺序克隆任意数量的子仓库。每个仓库可以使用不同 URL、分支和父项目内路径。
+一个紧凑的 Qt Widgets 桌面 Git 工作台：既能先克隆父项目、再按卡片顺序克隆任意数量的子仓库，也能递归发现工作目录中的本地 Git 仓库并集中切换分支。
 
 程序实际调用本机 `git`，并通过结构化参数启动进程，不会把表单内容拼接成 shell 命令。任一步骤失败或取消后立即停止后续队列，也不会自动删除已下载文件。
 
 ## 主要功能
 
+- 左侧导航在“仓库克隆”和“仓库工作区”之间切换，关闭应用后仍会恢复上次页面；
 - 子仓库使用独立卡片，可随时添加、删除并自动重编号；
 - 支持 0 个子仓库，此时只克隆父项目；
 - 按界面卡片顺序逐个执行，状态显示当前子仓库 `i/N`；
@@ -17,10 +18,17 @@
 - macOS 应用包含蓝色 “G + Git 分支” 图标；
 - 支持取消：先请求终止，3 秒未退出则强制结束；
 - 严格校验路径逃逸、重复子仓库目标和已存在的父目录。
+- 工作区页面递归发现普通仓库、嵌套仓库以及 `.git` 为文件的 worktree/submodule 形态；
+- 工作目录变化后自动保存；重启应用会恢复输入，有效目录会在后台自动扫描一次；
+- 选中仓库后显示当前分支、本地分支、全部远端跟踪分支，以及本地尚无同名分支的远端候选；
+- 选中仓库后实时检查工作树；干净状态明确说明，有已暂存、未暂存、未跟踪或冲突项时以醒目警示卡提示谨慎切换；
+- 本地分支通过 `git switch -- <branch>` 切换，远端候选通过 `git switch --track -- <remote>/<branch>` 创建跟踪分支；`--` 用于明确结束 Git 选项解析。
 
 ## 直接下载
 
 长期版本从 [GitHub Releases](https://github.com/qingyiz/git_clone_gui/releases) 下载：
+
+当前版本：`0.1.4`。应用左侧底部、macOS Bundle 元数据与 GitHub 标签使用同一版本号。
 
 - `GitCloneGui-macOS-arm64.dmg`：Apple Silicon Mac（M1/M2/M3/M4 等）；
 - `GitCloneGui-Windows-x64.zip`：64 位 Windows 10/11 便携包，解压后运行 `GitCloneGui.exe`。
@@ -96,15 +104,15 @@ cmake --install build/windows --config Release --prefix build/install-windows
 1. macOS 使用 `macos-15` arm64 runner，Qt 6.8 LTS、CMake/Ninja 完成 Release 编译和全部 CTest；`macdeployqt` 生成自包含 `.app`，无 Developer ID 时对整个 Bundle 执行 ad-hoc 重签并严格验证，随后打成 DMG。
 2. Windows 使用 `windows-2022` x64 runner，Qt 6.8 LTS、Visual Studio 2022 完成 Release 编译和全部 CTest；`windeployqt` 收集 Qt/plugin，脚本补齐 MSVC runtime 后生成便携 ZIP。
 3. 普通 `main` push、PR、手动运行只上传 Actions artifact。
-4. `v*` 标签在两个平台都成功后创建或更新同名 GitHub Release，并附加 DMG 与 ZIP。
+4. `v*` 标签在两个平台都成功后创建或更新同名 GitHub Release，并附加 DMG 与 ZIP；若存在 `docs/releases/<tag>.md`，该文件会作为 Release 正文，否则回退到 GitHub 自动生成说明。
 
 首次启用时，将本分支合并到 `main` 或直接从 Actions 页面选择 “Build and Release” → “Run workflow”。正式发布版本示例：
 
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v1.0.0 -m "GitCloneGui v1.0.0"
-git push origin v1.0.0
+git tag -a v0.1.4 -m "GitCloneGui v0.1.4"
+git push origin v0.1.4
 ```
 
 标签推送后到仓库的 Actions 页面观察两个平台 job；全部成功后，Release 页面会自动出现附件。不要在构建失败时手工上传裸 `.exe` 或 build-tree `.app`，它们没有完整运行时。
@@ -150,11 +158,23 @@ Apple 公证是在线外部服务，证书申请、开发者年费、协议状�
 
 ## 使用方法
 
+### 仓库克隆
+
 1. 填写父仓库 URL；稍候可从分支下拉框选择，也可以直接输入分支名。输入关键词会筛选包含该文本的远程分支。
 2. 选择父项目目录的上一级保存位置。
 3. 点击“添加子仓库”创建卡片，分别填写 URL、分支和父项目内相对路径。
 4. 不需要子仓库时，可以删除全部卡片，只克隆父项目。
 5. 右侧显示完整命令预览；配置有效后点击“开始克隆”。
+
+### 仓库工作区
+
+1. 点击左侧“仓库工作区”，选择一个包含多个项目的工作目录；选择后会自动扫描，也可点击“扫描仓库”重新扫描。应用会记住关闭前所在页面和工作目录，下次启动时恢复页面，并对仍然有效的目录自动扫描一次。
+2. 左侧仓库树按工作目录相对路径显示所有 Git 工作树。扫描不会进入 `.git` 元数据目录，也不会跟随目录符号链接；发现父仓库后仍会继续检查普通子目录，因此嵌套仓库也会显示。
+3. 选中仓库后，右侧显示当前分支和实时工作树状态。工作区干净时显示绿色说明；存在改动时显示橙色警示，并列出已暂存、未暂存、未跟踪和冲突中的非零数量。
+4. 分支标签显示本地分支、远端待跟踪分支和全部远端跟踪引用。这里读取的是本机现有 remote-tracking refs，不会自动执行 `fetch`。
+5. 在“本地分支”或“远端待跟踪”标签中选择目标并点击“切换到所选分支”，也可以双击。远端候选会按短分支名过滤本地已存在项，例如本地已有 `main` 时不再列出 `origin/main`。
+
+切换失败时会原样显示 Git 的诊断信息。应用不会自动执行 stash、reset、clean、pull 或 fetch；请先自行处理未提交改动、分支冲突或过期远端引用，再点击“刷新”。
 
 队列最终成功时会发送“GitCloneGui · 克隆完成”系统通知；父项目或任一子仓库失败时会发送“GitCloneGui · 克隆失败”通知并带上阶段错误。用户主动取消不会发送通知。若系统不支持桌面通知或通知权限被关闭，页内结果与 Git 输出仍会正常保留，克隆结果不会受到影响。
 
@@ -181,8 +201,13 @@ Apple 公证是在线外部服务，证书申请、开发者年费、协议状�
 - 父仓库 URL、分支、目录名；
 - 目标根目录；
 - 子仓库卡片数量、顺序、URL、分支和相对路径。
+- 仓库工作区的工作目录路径。
 
 配置由 Qt `QSettings` 写入当前用户的系统设置位置。macOS 上位于当前用户的 `~/Library/Preferences/` 范围，具体文件名由 Qt 和应用标识决定；不会写入源码目录或 `.app` 内部。
+
+工作目录恢复后，如果路径仍存在、是目录且可读，应用会在事件循环启动后自动后台扫描一次；无效路径只保留在输入框供修正，不会循环重试。仓库清单、当前分支和工作树改动状态均不持久化，每次扫描、选择仓库或刷新时实时读取。
+
+扫描器不会为了提速忽略 `build`、`node_modules` 等普通目录，因为这些目录中仍可能存在独立 Git 仓库。macOS/Linux 使用目录项类型减少重复元数据查询，Windows 保留 Qt 兼容实现；两种路径都不进入 `.git`、不跟随目录符号链接，并继续发现仓库内部更深层的嵌套仓库。
 
 不会保存 Git 输出、运行状态、密码、Token、SSH Key 或环境变量。但仓库 URL 本身会作为普通表单字段保存，因此不要把 Token 或密码嵌入 URL；请使用 SSH agent 或 Git credential helper。
 

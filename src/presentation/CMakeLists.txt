@@ -5,12 +5,19 @@ add_library(git_clone_presentation STATIC
     BranchSelector.h
     ChildRepositoryCard.cpp
     ChildRepositoryCard.h
+    ClonePage.cpp
+    ClonePage.h
+    ClonePageUi.cpp
     DesktopNotifier.cpp
     DesktopNotifier.h
     MainWindow.cpp
     MainWindow.h
-    MainWindowUi.cpp
     NotificationSeverity.h
+    RepositoryTree.cpp
+    RepositoryTree.h
+    WorkspacePage.cpp
+    WorkspacePage.h
+    WorkspacePageUi.cpp
 )
 
 target_include_directories(git_clone_presentation

@@ -1,6 +1,7 @@
 #include "presentation/BranchSelector.h"
 #include "presentation/ChildRepositoryCard.h"
 #include "presentation/MainWindow.h"
+#include "application/NavigationConfigurationStore.h"
 
 #include <QDir>
 #include <QApplication>
@@ -16,6 +17,7 @@
 #include <QPushButton>
 #include <QSplitter>
 #include <QSplitterHandle>
+#include <QStackedWidget>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -68,6 +70,20 @@ public:
     bool saveSucceeds = true;
 };
 
+class FakeNavigationConfigurationStore final : public NavigationConfigurationStore {
+public:
+    std::optional<NavigationPage> loadCurrentPage() const override { return stored; }
+    bool saveCurrentPage(NavigationPage page) override
+    {
+        savedPages.append(page);
+        stored = page;
+        return true;
+    }
+
+    mutable std::optional<NavigationPage> stored;
+    QList<NavigationPage> savedPages;
+};
+
 class FakeRemoteBranchService final : public RemoteBranchService {
 public:
     using RemoteBranchService::RemoteBranchService;
@@ -115,6 +131,8 @@ private slots:
     void branchSelectorUsesCustomRoundedChrome();
     void childCardRequestsBranchesFromItsUrl();
     void firstLaunchCreatesOneCardAndUsesCompactSize();
+    void navigationSwitchesPagesAndPreservesCloneState();
+    void navigationRestoresAndPersistsCurrentPage();
     void restoresMultipleCardsWithoutSavingImmediately();
     void restoresSavedZeroCards();
     void addsRemovesAndRenumbersCards();
@@ -131,6 +149,7 @@ private slots:
 
 void TestPresentation::initTestCase()
 {
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.4"));
     qRegisterMetaType<NotificationSeverity>();
 }
 
@@ -298,6 +317,60 @@ void TestPresentation::firstLaunchCreatesOneCardAndUsesCompactSize()
     QCOMPARE(window.minimumSize(), QSize(960, 680));
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("configurationPanel")) != nullptr);
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("executionPanel")) != nullptr);
+    QCOMPARE(window.findChild<QLabel *>(QStringLiteral("navigationVersionLabel"))->text(),
+             QStringLiteral("版本 0.1.4\n本地 Git 工具"));
+}
+
+void TestPresentation::navigationSwitchesPagesAndPreservesCloneState()
+{
+    DummyProcessRunner runner;
+    CloneController controller(&runner);
+    FakeConfigurationStore store;
+    MainWindow window(&controller, &store);
+    QStackedWidget *pages =
+        window.findChild<QStackedWidget *>(QStringLiteral("mainPageStack"));
+    QPushButton *cloneButton =
+        window.findChild<QPushButton *>(QStringLiteral("cloneNavigationButton"));
+    QPushButton *workspaceButton =
+        window.findChild<QPushButton *>(QStringLiteral("workspaceNavigationButton"));
+    QLineEdit *parentDirectory =
+        window.findChild<QLineEdit *>(QStringLiteral("parentDirectoryEdit"));
+
+    QCOMPARE(pages->currentIndex(), 0);
+    QVERIFY(cloneButton->isChecked());
+    QVERIFY(!workspaceButton->isChecked());
+    parentDirectory->setText(QStringLiteral("kept-across-pages"));
+
+    workspaceButton->click();
+    QCOMPARE(pages->currentIndex(), 1);
+    QVERIFY(workspaceButton->isChecked());
+    QCOMPARE(pages->currentWidget()->objectName(), QStringLiteral("workspacePage"));
+
+    cloneButton->click();
+    QCOMPARE(pages->currentIndex(), 0);
+    QVERIFY(cloneButton->isChecked());
+    QCOMPARE(parentDirectory->text(), QStringLiteral("kept-across-pages"));
+}
+
+void TestPresentation::navigationRestoresAndPersistsCurrentPage()
+{
+    DummyProcessRunner runner;
+    CloneController controller(&runner);
+    FakeConfigurationStore store;
+    FakeNavigationConfigurationStore navigationStore;
+    navigationStore.stored = NavigationPage::Workspace;
+    MainWindow window(&controller, &store, nullptr, nullptr, nullptr,
+                      &navigationStore, nullptr);
+    QStackedWidget *pages =
+        window.findChild<QStackedWidget *>(QStringLiteral("mainPageStack"));
+    QPushButton *cloneButton =
+        window.findChild<QPushButton *>(QStringLiteral("cloneNavigationButton"));
+
+    QCOMPARE(pages->currentIndex(), 1);
+    QCOMPARE(navigationStore.savedPages.last(), NavigationPage::Workspace);
+    cloneButton->click();
+    QCOMPARE(pages->currentIndex(), 0);
+    QCOMPARE(navigationStore.savedPages.last(), NavigationPage::Clone);
 }
 
 void TestPresentation::restoresMultipleCardsWithoutSavingImmediately()

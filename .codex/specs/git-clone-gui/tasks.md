@@ -4,7 +4,7 @@
 >
 > 状态：执行中
 >
-> 最近更新：2026-08-12
+> 最近更新：2026-08-14
 
 ## 执行策略
 
@@ -375,6 +375,171 @@
   - 验证：构建 `test_clone_core`/`test_clone_controller`；CTest 定向与 Debug 全量 6/6；参数计数、完成前输出顺序、三种 outcome 耗时格式/次数；静态确认无 shell 和无新增跨层依赖；重跑结构检查与 Spec 校验。
   - 实施记录：根因确认是 `GitProcessRunner` 已经通过 `QProcess::readyRead` 实时转发 merged channels，但 Git 在 stderr 非终端时默认抑制 clone 传输进度。`CloneRequest` 现为父项目和每个子仓库的结构化参数各加入且仅加入一个 `--progress`，不引入 shell；`CloneController` 使用 QtCore `QElapsedTimer` 从有效任务准备启动父阶段时开始计时，在唯一 `finish()` 路径为 Completed/Failed/Cancelled 最终日志各追加一次一位小数的“总耗时：N.N 秒”，校验失败不产生耗时。core 测试覆盖父/子参数与元字符安全，controller fake runner 覆盖完成前输出转发、三种 outcome 的耗时格式/次数及无效输入；Debug 与 Release 全量 CTest 均 6/6 通过，真实 Git 父+2 子流程回归通过，两个 preset 的 `.app` 均重新链接成功。`git diff --check` 与 shell API 静态扫描通过，无新增 target/link 或跨层依赖。
 
+- [x] TASK-025：定义工作区仓库与分支操作契约
+  - 类型：required
+  - 需求：REQ-013 / AC-013.2、AC-013.4～AC-013.7
+  - 设计：DEC-020；ARCH-001、ARCH-011；BUILD-001、BUILD-009；PROP-018、PROP-019
+  - 单一变更原因：先建立不依赖 Widgets/QProcess 的工作区值对象、分支差集规则与异步 port，供适配器和页面共同依赖。
+  - 模块/构建单元：`git_clone_application`。
+  - 架构约束：ARCH-001、ARCH-011 / BUILD-001、BUILD-009；application 不 include Widgets、QProcess 或文件系统遍历实现。
+  - 依赖变化：无新增 target link 边；application 增加 QtCore 内部类型。
+  - 平台/交付物：平台无关；不产生独立交付物。
+  - 依赖：TASK-024。
+  - 修改范围：`src/application/WorkspaceService.*`、`src/application/CMakeLists.txt` 与契约测试；不实现扫描、Git 进程或 UI。
+  - 产出：RepositoryInfo、BranchCatalog、BranchTarget、scan/load/switch/cancel 契约及可测试远端候选计算。
+  - 验证：构建 application；差集覆盖本地同名、`*/HEAD`、多 remote 同名和稳定排序；include/link 审查。
+  - 实施记录：新增 `WorkspaceService` port 与 `RepositoryInfo`、`BranchCatalog`、`BranchTarget` 值对象；`remoteBranchCandidates` 按 remote 后短名计算差集，排除 `*/HEAD`、去重并稳定排序，同时保留多 remote 的完整来源名。`test_workspace_contract` 覆盖本地同名过滤、无效远端名、多 remote 同名与顺序；Qt 5.15.2 Debug/Release 均通过，application 未 include Widgets/QProcess/文件系统且无新 target link 边。
+
+- [x] TASK-026：实现可取消仓库扫描与异步 Git 分支适配器
+  - 类型：required
+  - 需求：REQ-013 / AC-013.1～AC-013.9；NFR-012、NFR-013
+  - 设计：DEC-018～020；ARCH-011；BUILD-009；PROP-017～PROP-019
+  - 单一变更原因：把文件系统与 Git CLI 行为封装为一个实现 WorkspaceService 的基础设施适配器。
+  - 模块/构建单元：`git_clone_infrastructure`；测试 `test_git_workspace`。
+  - 架构约束：ARCH-011 / BUILD-009；扫描不跟随 symlink/不进入 `.git`，Git 用结构化参数且不执行 fetch/reset/stash/clean。
+  - 依赖变化：`git_clone_infrastructure` 私有新增 `${QT_PACKAGE}::Concurrent`；沿用 infrastructure → application 方向。
+  - 平台/交付物：平台无关运行时行为；macOS/Windows 产物形态不变。
+  - 依赖：TASK-025。
+  - 修改范围：顶层 Qt Concurrent 查找、`src/infrastructure/GitWorkspaceService.*`、infrastructure/test CMake、`tests/infrastructure/TestGitWorkspaceService.cpp`；不改 UI 或克隆 runner。
+  - 产出：generation 隔离的扫描 worker、嵌套仓库发现、refs 解析、本地/远端 switch、错误与 busy 状态信号。
+  - 验证：临时目录根/嵌套/`.git` 文件/symlink/取消测试；真实本地 Git 多分支/多 remote/switch/冲突测试；10,000 目录容量测试。
+  - 实施记录：新增 `GitWorkspaceService`；每次扫描使用独立 QtConcurrent watcher、共享 cancel token 与 generation，快速重扫时旧结果不会覆盖新目录，析构会等待 worker。迭代扫描识别 `.git` 文件/目录，排除 `.git` symlink/元数据目录与目录 symlink，发现父仓库后仍遍历普通子目录；结果规范化、去重、按相对路径稳定排序。单异步 QProcess 先读取当前分支再用 `for-each-ref` 读取 heads/remotes，切换使用 `git switch -- <local>` 或 `git switch --track -- <remote>`，显式结束选项且不执行 fetch/reset/stash/clean。真实 Git 测试覆盖根/嵌套/`.git` 文件仓库、本地 switch、远端 tracking switch 和刷新差集；10,000 目录+2 仓库扫描与 2,000 目录快速重扫隔离通过。Qt Concurrent 仅为 infrastructure 私有 link 边。
+
+- [x] TASK-027：把既有克隆界面迁为独立页面并增加导航壳
+  - 类型：required
+  - 需求：REQ-012、REQ-001～REQ-010 保持行为
+  - 设计：DEC-017；ARCH-004、ARCH-010；BUILD-001、BUILD-009；PROP-006、PROP-011、PROP-013、PROP-020
+  - 单一变更原因：在接入第二页前分离窗口壳与既有克隆页，并提供两个稳定导航入口。
+  - 模块/构建单元：`git_clone_presentation`。
+  - 架构约束：ARCH-004、ARCH-010 / BUILD-009；机械迁移保持旧对象名、controller/store/通知行为，MainWindow 不接管页面字段。
+  - 依赖变化：无新增 target/link 边；presentation 内部 MainWindow → ClonePage。
+  - 平台/交付物：macOS/Windows GUI 页面结构变化；既有 app 名称与产物路径不变。
+  - 依赖：TASK-026。
+  - 修改范围：`src/presentation/ClonePage.*`、`MainWindow.*`、`MainWindowUi.cpp`（迁移后移除）、AppStyle、presentation CMake/测试；先用占位 WorkspacePage 或注入 QWidget，不实现工作区行为。
+  - 产出：固定左侧导航、默认克隆页、状态保持页面栈、关闭取消协调；既有克隆页全行为回归。
+  - 验证：旧 presentation 测试全部通过；新增默认页、按钮选中、往返切换、运行中切页、关闭测试；snapshot。
+  - 实施记录：既有 `MainWindow` 的克隆页面机械迁为 `ClonePage`/`ClonePageUi`，保留全部控件 objectName、配置 debounce、通知请求、状态/日志与 controller 连接；新 `MainWindow` 173 行，仅拥有 188px 左侧导航、两个 checkable 入口、页面栈和关闭协调。页面实例常驻，往返切换保持表单/日志状态；关闭时工作区操作立即取消，运行中的 clone 仍按既有 cancel 后 closeReady 退出。原 `test_presentation` 全部通过，新增默认克隆页、选中态、往返状态保持测试；默认窗口 snapshot 显示侧栏未压缩旧双栏到不可用。
+
+- [x] TASK-028：实现仓库树与分支快速切换页面
+  - 类型：required
+  - 需求：REQ-012、REQ-013
+  - 设计：DEC-017～020；ARCH-006、ARCH-010、ARCH-011；BUILD-009；PROP-017～PROP-020
+  - 单一变更原因：把已验证的工作区 service 组合为完整可操作的第二个页面。
+  - 模块/构建单元：`git_clone_presentation` 与 `GitCloneGui` 组合根。
+  - 架构约束：ARCH-010、ARCH-011 / BUILD-009；页面不解析 Git 输出或遍历目录，app 是唯一具体 service 组合根。
+  - 依赖变化：无新增 target/link 方向；app 构造 GitWorkspaceService 并注入 MainWindow。
+  - 平台/交付物：macOS arm64 `.app` 与 Windows x64 `.exe` 增加工作区页面，路径/部署闭包不变。
+  - 依赖：TASK-027。
+  - 修改范围：`src/presentation/WorkspacePage.*`、`AppStyle.cpp`、`MainWindow.*`、`src/app/main.cpp`、相邻 CMake/test、README 与 Spec 实施记录；不加入 fetch/pull/push/分支删除或持久化工作区。
+  - 产出：目录选择与扫描、层级仓库树、当前/本地/完整远端/远端候选展示、本地与远端切换、刷新和错误/忙碌状态。
+  - 验证：fake service UI 测试、真实 service 集成、Debug/Release 全 CTest、snapshot、`.app` 构建/启动、自包含安装回归、结构与 Spec 校验。
+  - 实施记录：新增 `WorkspacePage` 与独立 `WorkspacePageUi`，提供目录选择/扫描/取消、按相对路径构建的层级仓库树、仓库计数、当前分支徽标、本地/远端待跟踪/全部远端三个列表、刷新、按钮与双击切换、busy/error/success 状态。页面只调用 `WorkspaceService`，app 组合根注入 `GitWorkspaceService`；README 说明扫描边界、remote-tracking refs、差集与无 fetch/stash/reset 行为。fake service 页面测试覆盖树层级、分支分类与两种 target 请求；视觉 snapshot 通过。Debug/Release 均 9/9 CTest，通过真实父+2 子 clone 回归。`build/release/bin/GitCloneGui.app` 开发 Bundle 与 `build/install-v013/GitCloneGui.app` 自包含 Bundle 均通过 delivery 检查；安装 Bundle 含 QtConcurrent/Widgets/Core/Gui 与 Cocoa plugin，严格 `codesign --deep --strict` 通过并以正常 Cocoa 方式保持事件循环运行。结构检查显示 MainWindow 173、WorkspacePage 316、GitWorkspaceService 323 行，无跨层 include、shell/system 或顶层 CMake 职责漂移。
+
+- [x] TASK-029：重绘仓库树层级、图标与选中状态
+  - 类型：required
+  - 需求：REQ-013 / AC-013.2、AC-013.10～AC-013.12；NFR-014
+  - 设计：DEC-019、DEC-021；ARCH-006、ARCH-010；BUILD-009；PROP-017、PROP-021
+  - 单一变更原因：修复用户截图中 `◆` 伪图标、原生 branch 区独立蓝块、层级弱和滚动条偏重造成的仓库树视觉问题。
+  - 模块/构建单元：`git_clone_presentation`；测试 `test_workspace_presentation`。
+  - 架构约束：ARCH-006、ARCH-010 / BUILD-009；RepositoryTree 不访问 service/I/O，WorkspacePage 只设置节点语义和路径角色，样式与图标不泄漏到 application/infrastructure。
+  - 依赖变化：无 target/link/include 方向变化；仅新增 presentation 内部 QWidget/delegate 源文件。
+  - 平台/交付物：macOS arm64 `.app` 与 Windows x64 `.exe` 的仓库树视觉更新，产物路径和运行时闭包不变。
+  - 依赖：TASK-028。
+  - 修改范围：`src/presentation/RepositoryTree.*`、`WorkspacePage.*`、`WorkspacePageUi.cpp`、`AppStyle.cpp`、presentation CMake/测试与 Spec 证据；不改 WorkspaceService、GitWorkspaceService、扫描/分支业务和发布脚本。
+  - 产出：纯文本节点、typed node roles、自绘 folder/repository/chevron/guide、连续圆角 hover/selection、38px 行高和 ≤8px 轻量滚动条。
+  - 验证：node role/text、sizeHint、展开命中、选中行像素连续性；长列表截图与人工视觉比较；Debug/Release 9/9 CTest、delivery/签名/启动回归、结构与 Spec 校验。
+  - 实施记录：根据用户截图定位到 macOS 原生 `QTreeWidget::branch` 与 item 分区绘制造成展开区独立深蓝块，同时 `WorkspacePage` 用 `◆` 文本前缀伪装仓库图标。新增 273 行 `RepositoryTree` 与私有 `QStyledItemDelegate`，关闭原生 branch decoration，统一自绘 40px 行、整行 8px 圆角 hover/selection、轻量 guide、圆角 chevron、folder/root 与 Git branch repository 矢量图标；节点通过 `RepositoryNodeKindRole` 表达语义，文本恢复纯目录名，无 emoji、theme icon 或二进制资产。树专属 QSS 使用 7px 透明轨道滚动条。chevron 命中覆盖原 branch 区并只切换展开状态，不改变 current item 或触发分支读取。自动化验证 Root/Directory/Repository role、无 `◆`、sizeHint ≥38、scrollbar ≤8、选中行左右/中部像素连续、chevron 展开及零 loadBranches 副作用；17 仓库长列表 snapshot 显示选中背景连续、层级线与图标清晰、滚动条轻量。Debug/Release 均 9/9 CTest，通过真实 Git 回归；`build/install-v013/GitCloneGui.app` 重新部署后 self-contained delivery 与 `codesign --deep --strict` 通过。结构检查显示 RepositoryTree 273、WorkspacePage 325 行，无新增 target/link 边或跨层依赖。
+
+- [x] TASK-030：持久化并恢复工作区根目录
+  - 类型：required
+  - 需求：REQ-013 / AC-013.13；NFR-015
+  - 设计：DEC-022；ARCH-001、ARCH-012；BUILD-010；PROP-022
+  - 单一变更原因：让工作区目录拥有独立、可测试且不污染 CloneRequest schema 的持久化生命周期。
+  - 模块/构建单元：`git_clone_application`、`git_clone_infrastructure`、`git_clone_presentation` 与 app 组合根。
+  - 架构约束：ARCH-012 / BUILD-010；presentation 只依赖 store port，QSettings key/schema 只归 infrastructure；恢复路径不自动触发扫描。
+  - 依赖变化：既有 target 内新增 port/adapter 源；无新 target、Qt component 或反向依赖。
+  - 平台/交付物：macOS/Windows 用户域设置增加 `workspace` namespace；应用产物形态不变。
+  - 依赖：TASK-029。
+  - 修改范围：`src/application/WorkspaceConfigurationStore.h`、`src/infrastructure/QSettingsWorkspaceConfigurationStore.*`、`WorkspacePage.*`、`MainWindow.*`、`main.cpp`、相邻 CMake/tests；不改扫描/Git/克隆配置 schema。
+  - 产出：optional load、300ms 最新值保存、关闭刷新、保存失败非阻塞提示、启动恢复但不自动扫描。
+  - 验证：临时 INI 首次/往返/覆盖；fake store 恢复/延迟/无自动扫描；Debug/Release CTest。
+  - 实施记录：新增仅包含 optional root path 的 `WorkspaceConfigurationStore` port 与 `QSettingsWorkspaceConfigurationStore` adapter，使用独立 `workspace/schemaVersion=1`、`workspace/rootPath` key，不改变 CloneRequest schema。`WorkspacePage` 在构造时恢复输入但不扫描，文本变化以 300ms debounce 只保存最新值，取消操作/析构前补刷；保存失败显示非阻塞错误且保留输入。app 组合根注入系统用户域 store，兼容构造仍可不启用持久化。临时 INI 测试覆盖首次无值、trim 往返、覆盖和不保存仓库清单；fake store UI 测试覆盖恢复无扫描、连续编辑仅保存最新值和失败不清空。Debug/Release 对应测试及全量 CTest 均通过。
+
+- [x] TASK-031：读取并醒目展示工作树改动风险
+  - 类型：required
+  - 需求：REQ-013 / AC-013.14～AC-013.17；NFR-012、NFR-015
+  - 设计：DEC-023；ARCH-011、ARCH-012；BUILD-009、BUILD-010；PROP-023
+  - 单一变更原因：让用户在切换分支前看到实时 clean/dirty 状态和分类数量，避免在不知情时携带或冲突改动。
+  - 模块/构建单元：`git_clone_application`、`git_clone_infrastructure`、`git_clone_presentation`。
+  - 架构约束：ARCH-011、ARCH-012 / BUILD-010；Git porcelain 解析只归 adapter，UI 只消费 typed status；不新增 stash/reset/clean 或 dirty 禁用逻辑。
+  - 依赖变化：无新增 target/link/include 方向；现有异步 Git 状态机增加只读 LoadStatus 阶段。
+  - 平台/交付物：macOS/Windows 工作区分支详情新增状态提示卡；产物路径与部署闭包不变。
+  - 依赖：TASK-030。
+  - 修改范围：`WorkspaceService.h`、`GitWorkspaceService.*`、`WorkspacePage.*`/Ui、`AppStyle.cpp`、application/infrastructure/presentation tests、README/Spec；不改 switch 参数、扫描或发布脚本。
+  - 产出：四类状态计数、clean 说明、dirty 高对比警示与谨慎切换文案、切换后重新读取。
+  - 验证：真实 Git clean/staged/unstaged/untracked/conflict；UI clean/dirty 文案/属性/计数与切换 enabled 同构；snapshot、Debug/Release 全 CTest、delivery/启动、结构与 Spec 校验。
+  - 实施记录：`BranchCatalog` 新增 `WorkingTreeStatus` 四类计数与 `hasChanges()`；`GitWorkspaceService` 在 HEAD/refs 后通过既有异步 QProcess 追加结构化 `git -C <repo> status --porcelain=v1 -z --untracked-files=normal`，解析 staged/unstaged/untracked/conflict，切换参数及禁止 fetch/stash/reset/clean 的边界不变。分支详情在当前分支下始终显示状态：clean 为绿色说明，dirty 为橙色高对比卡、左强调线、粗体标题、非零分类数量和谨慎切换文案；dirty 不改变切换按钮 enabled 规则，切换成功继续自动刷新状态。真实 Git 测试覆盖 clean、已暂存、未暂存、未跟踪和 merge conflict；UI 测试覆盖语义属性、文案、计数及 dirty 可切换。生成 `/tmp/git-clone-gui-worktree-warning.png` 并人工确认警示位置/层级。Debug/Release 10/10 CTest 通过，自包含安装 Bundle、严格签名结构与启动回归通过。
+
+- [x] TASK-032：持久化并恢复左侧导航页
+  - 类型：required
+  - 需求：REQ-012 / AC-012.5；NFR-015
+  - 设计：DEC-024；ARCH-001、ARCH-013；BUILD-011；PROP-024
+  - 单一变更原因：让关闭前所在页面作为独立启动状态可靠恢复，并对旧/未知配置安全回退。
+  - 模块/构建单元：`git_clone_application`、`git_clone_infrastructure`、`git_clone_presentation` 与 app 组合根。
+  - 架构约束：ARCH-013 / BUILD-011；MainWindow 只依赖枚举 store port，QSettings key/schema 只归 infrastructure。
+  - 依赖变化：既有 target 内新增 navigation port/adapter 源；无新 target、Qt component 或反向依赖。
+  - 平台/交付物：macOS/Windows 用户域设置增加 `navigation` namespace；应用产物形态不变。
+  - 依赖：TASK-031。
+  - 修改范围：`src/application/NavigationConfigurationStore.h`、`src/infrastructure/QSettingsNavigationConfigurationStore.*`、`MainWindow.*`、`main.cpp`、相邻 CMake/tests；不改 clone/workspace schema 或页面业务。
+  - 产出：Clone/Workspace 枚举往返、切页即时保存、启动恢复、未知/损坏配置回退 Clone。
+  - 验证：临时 INI store 测试；fake store MainWindow 恢复/保存测试；Debug/Release CTest。
+  - 实施记录：新增 `NavigationPage::Clone|Workspace` 与 `NavigationConfigurationStore` port；QSettings adapter 只使用 `navigation/schemaVersion=1` 和稳定字符串 `navigation/currentPage=clone|workspace`。MainWindow 构造完成时恢复页面，每次成功切页即时保存，缺失 schema/未知值回退 Clone；app 组合根注入同用户域的独立 store。临时 INI 测试覆盖首次/未知值/双页面往返，presentation fake store 覆盖恢复 Workspace 与切回 Clone 保存，定向测试通过且未修改 clone/workspace key。
+
+- [x] TASK-033：恢复有效工作目录后自动扫描
+  - 类型：required
+  - 需求：REQ-013 / AC-013.13；NFR-012、NFR-016
+  - 设计：DEC-025；ARCH-010、ARCH-013；BUILD-011；PROP-025
+  - 单一变更原因：把已保存的有效工作目录直接恢复为可用仓库树，同时保持 UI 首帧和既有取消/重扫语义。
+  - 模块/构建单元：`git_clone_presentation` 与 `test_workspace_presentation`。
+  - 架构约束：ARCH-010、ARCH-013 / BUILD-011；只排队调用 service，不在 UI 线程遍历目录。
+  - 依赖变化：无新增 link/include/target 边。
+  - 平台/交付物：macOS/Windows 工作区启动行为变化；产物路径和 Bundle 形态不变。
+  - 依赖：TASK-032。
+  - 修改范围：`WorkspacePage.*` 和 presentation tests；不修改存储格式、扫描算法或分支状态。
+  - 产出：有效恢复路径事件循环后自动 scan 一次；空/无效路径零次并可手工修正；手工扫描和取消行为保持。
+  - 验证：QTemporaryDir + fake service 时序、调用次数、busy/cancel 回归；Debug/Release presentation tests。
+  - 实施记录：`WorkspacePage::restoreRootPath()` 恢复输入并仅对 exists+isDir+isReadable 返回自动扫描资格；全部信号连接和初始 UI 状态就绪后用 `QTimer::singleShot(0)` 复用 `startScan()`，继续进入既有 worker/busy/cancel/generation 流。临时有效目录 fake service 测试确认事件循环后恰好一次 scan，原无效 `/workspace/restored` 测试确认零次且仍可编辑保存；定向 presentation 回归通过。
+
+- [x] TASK-034：降低递归扫描的逐目录文件系统开销
+  - 类型：required
+  - 需求：REQ-013 / AC-013.1～AC-013.3、AC-013.18；NFR-013、NFR-016
+  - 设计：DEC-026；ARCH-011、ARCH-013；BUILD-009、BUILD-011；PROP-017、PROP-026
+  - 单一变更原因：消除每目录 canonical 路径解析与完整 QFileInfoList 分配，在不漏嵌套仓库的前提下降低大树扫描耗时。
+  - 模块/构建单元：`git_clone_infrastructure` 与 `test_git_workspace`。
+  - 架构约束：ARCH-011、ARCH-013 / BUILD-011；只优化 worker 内部，port/signals/cancel/generation 不变，不默认忽略普通目录、不用 shell。
+  - 依赖变化：无新增 link/include/target 边；移除 worker 对 `QSet` 的需求（若无其他使用）。
+  - 平台/交付物：平台无关扫描行为；macOS/Windows 应用产物形态不变。
+  - 依赖：TASK-033。
+  - 修改范围：`GitWorkspaceService.cpp`、`TestGitWorkspaceService.cpp`、README/Spec；不改页面树、Git refs/switch 或部署脚本。
+  - 产出：单 worker 低开销 DFS、结果等价回归、10,000 目录 ≤1.5 秒且较约 1.78 秒基线中位数降低 ≥20%、真实 57,327 目录前后计时证据。
+  - 验证：正确性/取消/快速重扫测试；三次 QElapsedTimer 性能中位数；真实工作区计时；Debug/Release 全 CTest、delivery/启动、结构与 Spec 校验。
+  - 实施记录：基线确认原 worker 在 10,000 目录夹具三次总测试约 1.76～2.26s，真实 `/Users/qingyizhu/workspace` 57,327 目录扫描三次为 18.023/18.013/18.019s、均发现 17 仓库。移除逐目录 canonical/visited；macOS/Linux 私有 helper 通过 `opendir/readdir` 复用 `d_type`，仅 `DT_UNKNOWN` 回退 `lstat`，一次读取同时识别子目录与 `.git` 文件/目录；Windows/其他平台保留 Qt `entryList`。不使用 shell、不忽略普通目录，cancel、不可读计数、symlink 排除、嵌套发现和最终稳定排序不变。优化后 10,000 目录三次扫描中位数 146ms，较约 1.78s 基线降低约 91.8% 且低于 1.5s；真实工作区三次为 5.229/5.052/5.032s，中位数 5.052s，较 18.019s 降低约 72.0%，仍发现相同 17 仓库。完整正确性、Debug/Release 与交付证据见最终验证。
+
+- [ ] TASK-035：统一 `0.1.4` 版本并发布带说明的 GitHub Release
+  - 类型：required
+  - 需求：REQ-011 / AC-011.8～AC-011.9
+  - 设计：DEC-027；ARCH-009；BUILD-003、BUILD-005、BUILD-008；PROP-027
+  - 单一变更原因：让应用内版本、平台元数据、标签和 GitHub Release 说明一致，并交付当前已验收功能。
+  - 模块/构建单元：根/app/presentation、release workflow、release 文档和既有 presentation tests。
+  - 架构约束：ARCH-009 / BUILD-003、BUILD-005、BUILD-008；版本只由 CMake project 提供；Release 正文位于文档文件，YAML 不硬编码某一版本正文；不改变业务 target 依赖方向。
+  - 依赖变化：app 新增一个私有编译定义；release job 新增既有 checkout action，无新库或 target 边。
+  - 平台/交付物：macOS arm64 DMG、Windows x64 ZIP、GitHub Release `v0.1.4`。
+  - 依赖：TASK-034。
+  - 修改范围：CMake/app/MainWindow/presentation test、README、release workflow、`docs/releases/v0.1.4.md` 和 Spec；不改克隆/扫描/分支业务行为。
+  - 产出：侧栏“版本 0.1.4”、一致 Bundle/runtime 版本、中文 Release 正文、提交/main push/tag push 与两平台 Release。
+  - 验证：Debug/Release CTest、运行时 UI、Info.plist、自包含交付、workflow YAML/脚本审查、GitHub Actions 三个 job、Release API 正文与附件。
+  - 实施记录：线上证据待标签流水线闭环。根 CMake project 已设为 0.1.4 并以 app 私有编译定义注入运行时；MainWindow 读取 applicationVersion，在侧栏显示“版本 0.1.4”；Debug/Release 编译定义与 Info.plist 的 short/build version 均为 0.1.4。新增 `docs/releases/v0.1.4.md`，release job checkout 标签并优先使用同名说明文件，未来标签缺失文件时回退自动说明。Ruby YAML、Bash 语法和 diff check 通过；Qt 5.15.2 Debug/Release 全部 11/11 CTest 通过。GitHub Actions 与 Release API 证据将在标签 workflow 完成后补记。
+
 ## 执行波次
 
 | 波次 | 任务 | 并行性 | 完成后仓库状态 |
@@ -401,6 +566,17 @@
 | 20 | TASK-022 | 顺序 | 发布文档与 GitHub 原生交付证据闭环 |
 | 21 | TASK-023 | 顺序 | ad-hoc Bundle 签名结构有效且新 Release 不再被判为“已损坏” |
 | 22 | TASK-024 | 顺序 | 大仓库父/子 clone 实时产出进度且三种最终结果均记录一次总耗时 |
+| 23 | TASK-025 | 顺序 | 工作区跨层数据与操作契约稳定且分支差集可测试 |
+| 24 | TASK-026 | 顺序 | 嵌套扫描与真实 Git 分支操作可独立验证 |
+| 25 | TASK-027 | 顺序 | 主窗口成为导航壳且既有克隆旅程无回归 |
+| 26 | TASK-028 | 顺序 | 仓库工作区页面完整接线并通过交付回归 |
+| 27 | TASK-029 | 顺序 | 仓库树图标、层级和选择视觉统一且无原生 branch 割裂 |
+| 28 | TASK-030 | 顺序 | 工作目录可在重启后恢复；当时不自动扫描，后由 TASK-033 扩展 |
+| 29 | TASK-031 | 顺序 | 分支详情实时显示 clean/dirty 风险并完成回归交付 |
+| 30 | TASK-032 | 顺序 | 左侧导航页可持久化并安全恢复 |
+| 31 | TASK-033 | 顺序 | 有效恢复目录在启动后自动扫描一次 |
+| 32 | TASK-034 | 顺序 | 大目录扫描额外开销降低且保持完整发现 |
+| 33 | TASK-035 | 顺序 | `v0.1.4` 版本、说明和两平台附件在 GitHub Release 一致交付 |
 
 ## 覆盖检查
 
@@ -416,7 +592,9 @@
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
-| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023 | Windows/macOS Actions build/test/deploy、签名门控、artifact/Release、ad-hoc Bundle 严格验证 | 已完成 |
+| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件、ad-hoc Bundle 严格验证 | 执行中 |
+| REQ-012 | TASK-027, TASK-028, TASK-032 | navigation store/presentation、snapshot、运行中切页/关闭 | 已完成 |
+| REQ-013 | TASK-025, TASK-026, TASK-028～TASK-031, TASK-033～TASK-034 | contract、扫描/Git 集成与性能、工作目录存储/自动扫描、工作树风险、页面 fake service、自绘树与全量交付回归 | 已完成 |
 
 ## 完成门槛
 
@@ -439,3 +617,10 @@
 - [x] 无 Secrets 的 unsigned 降级有明确证据；真实 Developer ID/notary 与 Authenticode 验证保持为配置对应 Secrets 后的条件式路径。
 - [x] TASK-023 完成，macOS ad-hoc Bundle 严格签名验证、quarantine 等价检查和新标签 Release 原生验证均通过。
 - [x] TASK-024 完成，PROP-016 有父/子 `--progress`、完成前输出转发和三种 outcome 总耗时证据。
+- [x] TASK-025～TASK-028 全部完成。
+- [x] REQ-012～REQ-013 与 PROP-017～PROP-020 均有自动化和交付证据。
+- [x] 既有 REQ-001～REQ-011 全量回归通过，克隆页面对象名、配置、通知、运行中关闭语义无漂移。
+- [x] TASK-029 完成，AC-013.10～AC-013.12 / PROP-021 有交互、像素与 snapshot 证据。
+- [x] TASK-030～TASK-031 完成，AC-013.13～AC-013.17 / PROP-022～PROP-023 有存储、真实 Git、UI 语义与交付证据。
+- [x] TASK-032～TASK-034 完成，AC-012.5、AC-013.13、AC-013.18 / PROP-024～PROP-026 有导航存储、启动自动扫描、性能与交付证据。
+- [ ] TASK-035 完成，AC-011.8～AC-011.9 / PROP-027 有版本、UI、Bundle、Actions 与 Release API 证据。

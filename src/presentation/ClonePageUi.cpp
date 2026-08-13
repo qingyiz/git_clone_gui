@@ -1,4 +1,4 @@
-#include "presentation/MainWindow.h"
+#include "presentation/ClonePage.h"
 
 #include "presentation/AppStyle.h"
 #include "presentation/BranchSelector.h"
@@ -46,14 +46,9 @@ QFrame *cardFrame(QWidget *parent, const QString &objectName = {})
 
 } // namespace
 
-void MainWindow::createUi()
+void ClonePage::createUi()
 {
-    setWindowTitle(QStringLiteral("GitCloneGui · 多仓库克隆"));
-    resize(1160, 780);
-    setMinimumSize(960, 680);
-    setStyleSheet(applicationStyleSheet());
-
-    auto *root = new QWidget(this);
+    auto *root = this;
     root->setObjectName(QStringLiteral("appRoot"));
     auto *rootLayout = new QVBoxLayout(root);
     rootLayout->setContentsMargins(24, 20, 24, 22);
@@ -169,10 +164,9 @@ void MainWindow::createUi()
     executionLayout->addLayout(buttonLayout);
     contentLayout->addWidget(executionPanel, 10);
     rootLayout->addLayout(contentLayout, 1);
-    setCentralWidget(root);
 }
 
-QFrame *MainWindow::createParentCard(QWidget *parent)
+QFrame *ClonePage::createParentCard(QWidget *parent)
 {
     QFrame *card = cardFrame(parent, QStringLiteral("parentCard"));
     auto *layout = new QGridLayout(card);
@@ -198,7 +192,7 @@ QFrame *MainWindow::createParentCard(QWidget *parent)
     return card;
 }
 
-QFrame *MainWindow::createDestinationCard(QWidget *parent)
+QFrame *ClonePage::createDestinationCard(QWidget *parent)
 {
     QFrame *card = cardFrame(parent, QStringLiteral("destinationCard"));
     auto *layout = new QGridLayout(card);
@@ -217,7 +211,7 @@ QFrame *MainWindow::createDestinationCard(QWidget *parent)
     return card;
 }
 
-QFrame *MainWindow::createPreviewCard(QWidget *parent)
+QFrame *ClonePage::createPreviewCard(QWidget *parent)
 {
     QFrame *card = cardFrame(parent, QStringLiteral("previewCard"));
     auto *layout = new QVBoxLayout(card);
@@ -240,7 +234,7 @@ QFrame *MainWindow::createPreviewCard(QWidget *parent)
     return card;
 }
 
-QFrame *MainWindow::createStatusCard(QWidget *parent)
+QFrame *ClonePage::createStatusCard(QWidget *parent)
 {
     m_statusCard = new QFrame(parent);
     m_statusCard->setObjectName(QStringLiteral("statusCard"));
@@ -264,7 +258,7 @@ QFrame *MainWindow::createStatusCard(QWidget *parent)
     return m_statusCard;
 }
 
-QFrame *MainWindow::createLogCard(QWidget *parent)
+QFrame *ClonePage::createLogCard(QWidget *parent)
 {
     QFrame *card = cardFrame(parent, QStringLiteral("logCard"));
     auto *layout = new QVBoxLayout(card);

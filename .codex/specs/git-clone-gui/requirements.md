@@ -6,7 +6,7 @@
 >
 > 状态：已更新
 >
-> 最近更新：2026-08-12
+> 最近更新：2026-08-14
 
 ## 事实与环境基线
 
@@ -35,6 +35,15 @@
 | FACT-021 | Release `v0.1.0`/`v0.1.1` 的 DMG 校验和与 Bundle 依赖完整，但部署后的 `.app` 仅保留链接器 ad-hoc 签名；新增 Frameworks/PlugIns/Resources 后未重签，`codesign --verify --deep --strict` 报 `code has no resources but signature indicates they must be present`，Safari quarantine 下被 Gatekeeper 显示为“已损坏”。 | 已验证 | 用户截图；下载文件 SHA-256；DMG 挂载、`codesign`/`spctl` 原生复现 | 无 Developer ID 路径也必须重签整个 Bundle 并严格验证；可信无警告分发仍需要 Developer ID 与公证。 |
 | FACT-022 | 修复后的 PR #5 run `31511847361` 与标签 `v0.1.2` run `31512200305` 均在 macOS arm64/Qt 6.8 完成 ad-hoc Bundle 重签、6/6 CTest、严格 `codesign`、DMG 打包和上传；标签 run 同时完成 Windows 与 Release job。 | 已验证 | Actions job/step 日志；Release asset API | 发布后的 DMG 不再包含失效 Bundle 签名；无 Developer ID 时 Gatekeeper 仍会要求用户明确覆盖。 |
 | FACT-023 | `GitProcessRunner` 已通过 `QProcess::readyRead` 异步转发 merged channels，但 `CloneRequest` 生成的 `git clone` 命令未携带 `--progress`；Git 在标准错误不是终端时默认不持续输出进度。 | 已验证 | `src/infrastructure/GitProcessRunner.cpp`、`src/core/CloneRequest.cpp`；Git 2.44.0 `git clone -h`/行为探测 | 实时链路无需重构；父/子 clone 显式启用进度输出，并在最终日志增加任务总耗时。 |
+| FACT-024 | 用户希望在现有克隆界面左侧新增导航，并提供第二个“仓库工作区”页面：递归发现指定目录内的独立 Git 仓库与嵌套仓库，查看分支并快速切换。 | 用户明确 | 2026-08-13 V0.1.3 需求 | 新能力必须作为独立页面接入，不改变既有克隆旅程。 |
+| FACT-025 | 当前 `MainWindow` 同时拥有窗口壳和完整克隆页面职责，`MainWindow.cpp` 372 行、`MainWindowUi.cpp` 284 行；presentation 尚无导航或工作区页面。 | 已验证 | `inspect_structure.py`、`src/presentation/MainWindow*` | 新增第二页前应把克隆页从窗口壳分离，避免继续堆叠页面职责。 |
+| FACT-026 | Git 工作树的 `.git` 可以是目录，也可以是文件；本机 Git 2.44.0 支持格式化读取引用和 `git switch`。 | 已验证 | 本机 Git 只读命令探测、Git worktree 行为 | 发现逻辑同时识别 `.git` 文件/目录；分支读取和切换继续使用结构化 Git CLI 参数。 |
+| FACT-027 | 仓库已有 `v0.1.3` 标签，其内容为“clone 实时进度与总耗时”，与用户本轮称呼的 V0.1.3 功能不同。 | 已验证 | `git log --decorate`、tag `v0.1.3` | 本轮先把 V0.1.3 当需求名称，不覆盖或移动既有标签；正式发版应使用后续版本。 |
+| FACT-028 | 用户明确认为当前仓库树风格和图标不可接受；截图中仓库使用黑色文本菱形 `◆`，原生展开分支区与文本区在选中时形成不连续蓝色块，滚动条和层级反馈也偏重。 | 用户明确且已验证 | 2026-08-13 用户截图；`WorkspacePage::setRepositories`、`AppStyle.cpp` | 仓库树需要专用视觉组件，不能继续用文本符号和全局 QTreeWidget QSS 修补。 |
+| FACT-029 | 用户反馈工作目录在重启后为空，并要求选中仓库时明确显示工作树是否存在改动；有改动时必须醒目提示谨慎切换分支。 | 用户明确且已验证 | 2026-08-13 用户截图；`WorkspacePage`/`BranchCatalog`/QSettings adapter 检查 | 工作区根目录需要独立持久化契约；分支详情需要实时工作树状态，不得用缓存或仅凭分支名推断。 |
+| FACT-030 | 用户要求记住关闭前的左侧页面、恢复有效工作目录后自动扫描，并反馈当前扫描偏慢。 | 用户明确且已验证 | 2026-08-13 用户截图；启动/扫描调用链检查 | 启动状态需覆盖导航页与自动扫描，扫描器需要基于相同数据集做可量化优化。 |
+| FACT-031 | `/Users/qingyizhu/workspace` 当前约有 57,327 个目录，系统 `find` 冷热混合遍历实测约 9.41 秒；现有扫描器对每个目录额外调用 `canonicalFilePath()`。 | 已验证 | `find ... -type d`、`wc -l`、`GitWorkspaceService::scanDirectories` | 大目录树本身存在文件系统成本；先消除逐目录 canonical 路径解析和不必要对象分配，不能承诺瞬时完成。 |
+| FACT-032 | 用户确认当前功能可以提交并要求通过 GitHub 发布下一版本 `0.1.4`，且 Release 页面需要有明确说明。 | 用户明确 | 2026-08-14 用户反馈与 Release 页面截图 | 应统一应用/Bundle 版本、在界面展示当前版本，并让标签 workflow 使用随代码评审的版本说明创建 Release。 |
 
 ### 技术与运行环境调查
 
@@ -53,7 +62,7 @@
 
 ### 问题陈述
 
-既有多仓库、配置恢复、分支发现、跨平台打包与发布已完成。2026-08-12 的追加反馈表明，大型父仓库在完成前看不到持续 Git 传输日志，用户无法判断任务是否仍在推进，最终日志也缺少本次克隆的总耗时。
+既有多仓库克隆、配置恢复、远程 URL 分支发现、跨平台打包与发布已经完成。2026-08-13 的追加需求要求把应用扩展为带左侧导航的 Git 工作台：保留现有克隆页，并新增可递归发现工作目录内普通及嵌套 Git 仓库、集中查看本地/远端分支和快速切换分支的独立页面。
 
 ### 目标与成功指标
 
@@ -72,12 +81,19 @@
 - macOS 发布包为包含自包含 `.app` 的 DMG；配置 Developer ID 与公证 Secrets 后必须签名、启用 Hardened Runtime、提交 Apple 公证并 stapling。
 - Windows 发布包为包含 `.exe`、Qt DLL、platform plugin 与 MSVC runtime 的便携 ZIP；配置 PFX Secret 后必须 Authenticode 签名主程序。
 - 父项目和子仓库克隆在非终端 GUI 管道中仍应持续输出 Git 传输进度；任务最终成功、失败或取消时打印总耗时。
+- 左侧提供稳定导航入口：第一个入口保留现有“仓库克隆”，第二个入口进入“仓库工作区”。
+- 选择工作目录后递归发现其中所有 Git 工作树，包括已发现仓库内部更深层的嵌套仓库，并以相对目录层级显示。
+- 选中仓库后显示当前分支、本地分支及本地尚无同名分支的远端分支；可安全切换本地分支或从远端分支创建跟踪分支。
+- 扫描、分支读取和切换均不阻塞窗口事件循环，失败时保留已发现仓库和可操作页面状态。
+- 重启应用后恢复上次工作目录；选中仓库时同时显示工作树干净或存在改动的状态，脏工作树以醒目警示提醒谨慎切换。
+- 重启应用后恢复关闭前所在页面；存在有效的已保存工作目录时自动开始后台扫描，并降低大目录树扫描的额外元数据开销。
 
 ### 非目标
 
 - 不保存 Git 密码、Token、SSH Key、环境变量或运行日志。
 - 不支持拖拽排序；卡片顺序即添加顺序，删除后剩余卡片自动重编号。
-- 不新增 pull/fetch/checkout、Git submodule 写入、远端账号管理或自动清理。
+- 既有克隆旅程不新增 pull/fetch/checkout；仓库工作区仅新增 `git switch`，不新增 pull、push、fetch、merge、rebase、分支删除/重命名、远端管理或自动清理。
+- 工作区扫描不跟随目录符号链接，不进入任何 `.git` 元数据目录，不自动修改或初始化仓库。
 - 不为判断最近提交而浅克隆所有分支，不接入 GitHub/GitLab 等托管平台专用 API。
 - 不制作 PKG/MSI/App Store/Microsoft Store 安装包，不实现应用内自动更新。
 - 不在仓库或 artifact 中保存证书私钥、证书密码、Apple ID app-specific password 或其他发布凭据。
@@ -121,6 +137,9 @@
 8. 用户输入仓库 URL 后，从默认/常用优先的分支列表中选择，或输入关键词筛选后继续手工填写。
 9. 克隆完成后，执行中心以内嵌成功状态展示结果，Git 输出保持可查看；再次执行前仅在目标目录非空时提示必须为空。
 10. 维护者推送普通提交后从 Actions 下载测试包；推送 `v1.2.3` 等标签后从 GitHub Releases 下载 macOS DMG 或 Windows ZIP。配置签名 Secrets 后，标签发布包同时具有对应平台信任链。
+11. 用户从左侧进入“仓库工作区”，选择一个现有工作目录并开始扫描；仓库树按相对路径显示普通及嵌套 Git 工作树。
+12. 用户选中某个仓库后看到当前分支、本地分支和远端待跟踪分支；选择目标分支并切换，成功后页面刷新并高亮新的当前分支。
+13. 用户重启应用后工作目录输入框恢复上次值；选中仓库时先看到工作树状态，若有已暂存、未暂存、未跟踪或冲突项，警示卡提示切换前先确认改动安全。
 
 ## 功能需求
 
@@ -303,6 +322,53 @@
 - AC-011.5：当 Windows PFX 与密码 Secrets 完整时，workflow 应使用 `signtool` 和 RFC3161 timestamp 对 `GitCloneGui.exe` 执行 Authenticode 签名并验证；凭据缺失时生成未签名测试 artifact，不在日志打印私钥或密码。
 - AC-011.6：普通成功运行应上传两个具名 artifact；仅当 ref 为 `refs/tags/v*` 时，release job 才能以最小 `contents: write` 权限创建/更新对应 GitHub Release 并附加 DMG/ZIP。
 - AC-011.7：README 应说明 Actions artifact 与 Release 的区别、标签发版命令、所有 Secrets 的生成/配置方法、未签名包的系统提示以及证书采购前提。
+- AC-011.8：`0.1.4` 发布提交中，CMake project、运行时 `applicationVersion`、macOS Bundle 元数据和应用左侧底部版本提示应来自同一个 `${PROJECT_VERSION}`，界面显示“版本 0.1.4”。
+- AC-011.9：标签 Release 应优先读取 `docs/releases/<tag>.md` 作为版本说明；说明至少包含主要功能、扫描优化、工作树切换提醒、下载附件与未签名包提示。没有对应文件的未来标签可回退到 GitHub 自动生成说明。
+
+### REQ-012：通过左侧导航访问独立功能页面
+
+**用户故事：** 作为开发者，我希望在一个应用中清晰切换仓库克隆和仓库工作区，从而让两个独立旅程互不干扰。
+
+- 优先级：Must
+- 前置条件：应用已启动。
+- 结果/副作用：只改变当前可见页面，不启动 Git 或文件系统操作。
+
+#### 验收标准
+
+- AC-012.1：应用应当在左侧显示“仓库克隆”和“仓库工作区”两个导航按钮，首次启动默认显示既有仓库克隆页面。
+- AC-012.2：当用户点击任一导航按钮时，系统应当只显示对应页面，并以可观察的选中样式标识当前入口。
+- AC-012.3：当用户在两个页面之间切换时，系统应当保留当前会话中的克隆表单、日志、工作目录、仓库树与分支选择状态。
+- AC-012.4：在克隆任务运行期间，导航切换不得取消或重复启动该任务；关闭主窗口仍应沿用既有取消后退出语义。
+- AC-012.5：当用户切换左侧导航或关闭应用时，系统应当保存当前页面；下次启动应恢复该页面。无配置、未知值或配置读取失败时回退到“仓库克隆”。
+
+### REQ-013：发现工作区仓库并管理分支
+
+**用户故事：** 作为维护多个本地项目的开发者，我希望递归发现工作目录中的 Git 仓库并切换分支，从而不必逐个进入目录执行命令。
+
+- 优先级：Must
+- 前置条件：本机 Git 可执行，用户对所选目录与仓库具有相应读取/写入权限。
+- 结果/副作用：扫描和分支读取只读；成功切换会改变所选仓库的 HEAD，并可能从远端跟踪引用创建同名本地分支。
+
+#### 验收标准
+
+- AC-013.1：当用户选择现有工作目录并开始扫描时，系统应当递归识别包含 `.git` 目录或 `.git` 文件的工作树；不得进入 `.git` 元数据目录或跟随目录符号链接，且发现父仓库后仍应继续发现其普通子目录中的嵌套仓库。
+- AC-013.2：扫描结果应当以工作目录为根、按相对目录层级稳定排序显示；同一规范路径只显示一次，并显示仓库总数。
+- AC-013.3：如果根目录无效或不可读，系统应当显示具体错误且保留上一次成功结果；如果部分子目录不可读，系统应当完成其余扫描并显示跳过数量。
+- AC-013.4：当用户选中仓库节点时，系统应当异步读取并显示当前分支、全部本地分支和全部远端跟踪分支；分离 HEAD 应明确显示为“分离 HEAD”。
+- AC-013.5：远端候选列表应当排除符号引用 `<remote>/HEAD`，并排除短分支名已存在于本地分支列表中的项；多个远端具有同一候选短名时仍以完整 `<remote>/<branch>` 分别显示。
+- AC-013.6：当用户选择本地分支并确认切换时，系统应当通过结构化参数执行 `git switch`；成功后刷新该仓库分支状态，失败时显示 Git 错误且不伪造当前分支变化。
+- AC-013.7：当用户选择远端候选并确认切换时，系统应当通过结构化参数执行 `git switch --track <remote>/<branch>` 创建跟踪分支；成功后该短分支从远端候选消失并成为当前本地分支。
+- AC-013.8：扫描、分支读取或切换进行期间，系统应当禁用会造成同类并发冲突的按钮并提供进行中状态；页面导航和窗口事件循环保持响应。
+- AC-013.9：如果 Git 不存在、仓库在扫描后被删除、分支引用变化、切换冲突或权限不足，系统应当显示仓库路径与可诊断错误，并允许重新扫描或刷新，不自动执行 fetch、reset、stash 或清理。
+- AC-013.10：仓库树应当使用语义明确且跨平台一致的矢量文件夹/仓库图标，不得在节点文本中拼接 `◆`、emoji 或依赖操作系统主题图标；仓库与普通容器目录在正常、悬停、选中状态下均应可区分。
+- AC-013.11：展开/折叠指示器、图标和名称应当位于同一连续行视觉内；选中仓库时整行显示单一圆角浅蓝背景，展开指示器区域不得出现独立深蓝矩形或黑色直角边框。
+- AC-013.12：树节点可视行高应不少于 38 像素、缩进层级应有细线或等价层级反馈，文本与图标间距一致；垂直滚动条宽度不超过 8 像素且轨道透明，不遮挡行内容。
+- AC-013.13：工作目录输入变化后应当延迟写入 QSettings，并在应用重启或页面重新创建时恢复；首次使用或无有效配置时保持空值，存储失败只显示非阻塞错误且不清空当前输入。恢复值指向现有可读目录时，页面应在事件循环启动后自动发起一次扫描；无效路径只保留输入并显示错误，不重复自动扫描。
+- AC-013.14：当用户选中仓库或刷新分支时，系统应当异步读取当前工作树状态，并将已暂存、未暂存、未跟踪和冲突项计数随分支目录一起返回；状态读取不得阻塞 UI。
+- AC-013.15：当工作树干净时，分支详情应明确显示“工作区干净”；当任一改动计数非零时，应在当前分支下方显示高对比警示卡，明确提示存在未提交改动并应谨慎切换分支。
+- AC-013.16：脏工作树警示应列出非零类别及数量；切换成功后的自动刷新必须重新读取状态，使警示与当前磁盘状态一致。
+- AC-013.17：警示不得自动执行或建议程序已执行 stash、reset、clean，也不得单凭脏状态禁止切换；Git 因改动冲突而拒绝切换时继续沿用可诊断失败语义。
+- AC-013.18：扫描优化后仍应完整发现父仓库内部的嵌套仓库、不跟随符号链接、不进入 `.git`；在同一 10,000 目录夹具上，扫描阶段中位耗时应较优化前降低至少 20%，并在开发机上不超过 1.5 秒。
 
 ## 非功能需求
 
@@ -319,6 +385,11 @@
 | NFR-009 | 通知可靠性 | 系统通知是最终 Completed/Failed 后的附加副作用；不支持/无权限时静默降级，不能阻塞 UI、改变 outcome 或重复发送 | 完成/失败/取消信号测试与 Qt tray capability 审查 |
 | NFR-010 | 发布安全 | Actions 默认只读；仅 release job 写 contents；第三方 Actions 固定 commit SHA；证书只从 Secrets 注入临时文件/钥匙串并在 job 结束销毁 | workflow 静态审查、GitHub run 日志、签名脚本审查 |
 | NFR-011 | 可观测性 | 每个已启动任务的最终日志在 Completed/Failed/Cancelled 三种结果下均且仅包含一次单调计时得到的总耗时，显示精度 0.1 秒 | fake runner 三种结果测试与日志计数断言 |
+| NFR-012 | 工作区响应性 | 递归扫描与所有 Git 分支操作在 worker/异步进程中执行；默认 UI 线程不遍历目录、不等待进程 | 线程归属审查、进行中 UI 测试、真实 Git 集成测试 |
+| NFR-013 | 扫描容量 | 在 10,000 个目录、500 个仓库的测试树中，结果去重且稳定；扫描过程可取消，取消不覆盖上次成功结果 | 临时目录压力测试与取消测试 |
+| NFR-014 | 树视觉一致性 | 仓库树的 chevron、folder、repository 图标由同一 presentation 代码路径绘制，不依赖平台 theme icon；折叠/展开、悬停、选中及高 DPI 缩放保持形状与配色一致 | delegate 绘制状态测试、像素断言与 macOS snapshot |
+| NFR-015 | 工作区状态与配置 | 工作目录只通过 application store 契约持久化，不保存仓库状态/分支清单；工作树状态通过结构化异步 Git 命令实时读取，任何改动检测都不触发仓库写操作 | 临时 INI 往返、presentation 恢复测试、真实 Git 干净/脏状态集成与静态命令审查 |
+| NFR-016 | 启动与扫描性能 | 导航恢复和自动扫描不阻塞主线程；扫描 worker 不对每个已知非符号链接目录执行 canonical path 解析，目录结果仍稳定去重 | 启动时序 fake 测试、10,000 目录扫描段计时、57,327 目录真实工作区前后对比与代码审查 |
 
 ## 边界、错误与状态转换
 
@@ -347,6 +418,16 @@
 | 只有部分 macOS Secrets | 不进入签名/公证路径，避免生成看似正式但无法验证的包 | REQ-011, NFR-010 |
 | 推送普通分支/PR | 只上传 Actions artifact，不创建 GitHub Release | REQ-011 |
 | 推送 `v*` 标签 | 两个平台都成功后创建/更新同名 Release 并附加两个平台包 | REQ-011 |
+| 根目录本身是仓库且含嵌套仓库 | 树中同时显示根仓库和嵌套仓库，不进入各自 `.git` 元数据 | REQ-013 |
+| `.git` 是文件（worktree/submodule 形态） | 该目录仍被识别为 Git 工作树 | REQ-013 |
+| 远端 `origin/main` 且本地已有 `main` | 远端候选中隐藏 `origin/main`；完整远端清单仍可观察 | REQ-013 |
+| 两个远端都有本地不存在的 `feature/x` | 候选分别显示完整的 `origin/feature/x` 与 `upstream/feature/x` | REQ-013 |
+| 切换时工作区冲突 | 显示 Git 错误并保留当前分支；不 stash/reset/clean | REQ-013 |
+| 扫描期间再次选择目录 | 取消旧扫描；旧结果不得覆盖新目录结果 | REQ-013, NFR-012 |
+| 选中可展开的仓库节点 | chevron、仓库图标和名称共享一个连续圆角选中背景，不出现 branch 区独立色块 | REQ-013, NFR-014 |
+| 重启后进入工作区 | 恢复上次导航页；有效工作目录在事件循环启动后自动扫描一次 | REQ-012, REQ-013, NFR-016 |
+| 当前仓库包含未跟踪或已修改文件 | 显示醒目警示和分类计数，保留分支切换按钮；不自动 stash/reset/clean | REQ-013, NFR-015 |
+| 切换后工作树仍有可携带改动 | 自动刷新后继续显示脏状态警示，不把切换成功误报为工作区干净 | REQ-013, NFR-015 |
 
 ## 约束、假设与风险
 
@@ -357,6 +438,7 @@
 - macOS 图标与自包含 Release 安装产物为 required（FACT-009、FACT-010）。
 - 远程分支发现、页内结果反馈、空目录语义和大日志区域为 required（FACT-012、FACT-013）。
 - GitHub 托管的 macOS arm64/Windows x64 构建、部署包和标签 Release 为 required；真实签名/公证执行依赖用户配置对应平台 Secrets（FACT-017～FACT-019）。
+- 左侧导航、嵌套仓库递归发现、本地/远端跟踪分支查看与结构化 `git switch` 为 required（FACT-024～FACT-026）。
 
 ### 待验证假设
 
@@ -397,6 +479,16 @@
 | ANA-015 | 凭据边界 | REQ-011 | 当前只有 Apple Development 证书，不能用于站外可信分发/公证；Windows 证书未知 | workflow 无 Secrets 时产出测试包，有完整 Secrets 时严格签名验证；文档明确证书申请步骤 |
 | ANA-016 | macOS 交付回归 | REQ-011 | `macdeployqt` 添加资源与嵌套代码后保留了失效的链接器 ad-hoc 签名；只检查文件结构和启动、不执行严格 `codesign`，未发现 Safari 下载后的 Gatekeeper “已损坏” | 无 Developer ID 时调用 `macdeployqt -codesign=-` 重签全部嵌套代码；打包脚本无条件执行严格 Bundle 验证，并用带 quarantine 的副本验证系统行为 |
 | ANA-017 | 实时输出根因 | REQ-003 | `QProcess::readyRead` 已实时读取，但 Git 检测到 stderr 非终端后默认抑制 clone 进度，造成大型父仓库完成前近似无日志 | 在 core 生成的父/子 `git clone` 参数中显式加入 `--progress`；controller 使用单调计时器统计整个任务并在统一 finish 路径打印耗时 |
+| ANA-018 | 架构变化 | REQ-012, REQ-013 | `MainWindow` 已拥有完整克隆页职责，直接添加仓库树和 Git 操作会把窗口壳、两页 UI 与 I/O 混合 | 把既有克隆内容迁为独立 `ClonePage`；`MainWindow` 仅保留导航、页面栈和关闭协调 |
+| ANA-019 | 分支歧义 | REQ-013 | “远端只列出本地没有的”可能按完整 ref 或短分支名比较 | 以去掉第一个 remote 段后的短分支名与本地分支精确比较；仍单独展示完整远端清单，候选保留 remote 前缀以消除歧义 |
+| ANA-020 | 网络边界 | REQ-013 | 自动 fetch 会改变引用、触发网络与认证，用户未要求 | 只读取当前本地 remote-tracking refs；由用户在应用外更新，页面提供刷新但不 fetch |
+| ANA-021 | 版本冲突 | 发布 | 仓库已存在 `v0.1.3` 标签，不能用同名标签发布新功能 | 不移动既有标签，本轮正式发布建议使用 `v0.1.4` 或更高版本 |
+| ANA-022 | 视觉根因 | REQ-013 | `QTreeWidget::branch` 与 item 由平台样式分别绘制；文本前缀 `◆` 不具备图标语义，导致截图中的割裂选中块和粗糙仓库标识 | 使用 presentation 内专用树与 delegate 自绘整行 chrome、chevron、folder/repository 矢量图标；节点文本恢复纯名称 |
+| ANA-023 | 配置缺口 | REQ-013 | 既有 `ConfigurationStore` 只序列化克隆请求，工作区页面没有存储依赖，因此重启后根目录必然为空 | 新增窄接口 `WorkspaceConfigurationStore` 与独立 `workspace/rootPath` key，避免扩大 CloneRequest schema 或让 presentation 依赖 QSettings |
+| ANA-024 | 风险可见性 | REQ-013 | 当前 branch load 只读取 HEAD/refs，用户在切换前无法判断工作树是否干净 | 在同一异步读取状态机追加只读 `git status --porcelain=v1 --untracked-files=normal`，解析分类计数并在分支详情显示干净/警示状态；不改变 switch 决策权 |
+| ANA-025 | 启动状态 | REQ-012, REQ-013 | 工作目录已持久化但导航页未保存，且恢复路径刻意不自动扫描，与本轮用户期望冲突 | 新增独立导航配置 port；调整 AC-013.13，在 UI 信号连接完成后排队自动扫描有效恢复目录 |
+| ANA-026 | 性能根因 | REQ-013 | 当前 DFS 对每个目录调用 `canonicalFilePath()` 后仍用 `NoSymLinks` 枚举；在树形路径无目录硬链接且不跟随 symlink 的边界下，逐目录 canonical 去重是重复磁盘工作 | 根目录只规范化一次；子目录沿唯一父路径迭代，使用名称列表减少 `QFileInfoList` 分配，保留 marker/readability/symlink 边界与稳定排序 |
+| ANA-027 | 版本与说明一致性 | REQ-011 | 项目版本和 `main.cpp` 运行时版本当前都为 `1.0.0`，既有 Release 由 `--generate-notes` 创建，无法保证 `v0.1.4` 页面解释核心功能与安全限制 | 以 CMake `PROJECT_VERSION` 为单一版本源并注入 app；标签名选择同名说明文件，缺失时才回退自动说明 |
 
 ## 需求追踪
 
@@ -412,7 +504,9 @@
 | REQ-008 | AC-008.1～AC-008.5 | plist/资源/alpha 检查、self-contained delivery、`otool`、Finder/Dock 启动检查 |
 | REQ-009 | AC-009.1～AC-009.6 | branch service、本地远程集成、presentation 搜索测试与 selector snapshot |
 | REQ-010 | AC-010.1～AC-010.5 | core 目录测试、presentation 状态/布局/通知信号测试与 snapshot |
-| REQ-011 | AC-011.1～AC-011.7 | workflow/schema 审查、macOS/Windows 原生 Actions run、artifact 结构、ad-hoc Bundle 严格签名验证、Developer ID/公证门控、tag Release |
+| REQ-011 | AC-011.1～AC-011.9 | workflow/schema 审查、版本一致性、macOS/Windows 原生 Actions run、artifact 结构、Release 说明、ad-hoc Bundle 严格签名验证、Developer ID/公证门控、tag Release |
+| REQ-012 | AC-012.1～AC-012.5 | navigation store 往返、presentation 恢复、克隆运行中切页与关闭回归 |
+| REQ-013 | AC-013.1～AC-013.18 | 扫描单元/压力/性能测试、工作目录 QSettings 往返与启动自动扫描、真实 Git 分支/工作树状态/切换集成、工作区页面及树 delegate snapshot 测试 |
 
 ## 未决问题
 
