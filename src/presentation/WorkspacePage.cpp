@@ -1,4 +1,5 @@
 #include "presentation/WorkspacePage.h"
+#include "presentation/BranchNameMatcher.h"
 #include "presentation/RepositoryTree.h"
 
 #include "application/WorkspaceConfigurationStore.h"
@@ -111,7 +112,8 @@ void WorkspacePage::switchSelectedBranch()
 {
     QListWidget *list = activeSwitchList();
     QListWidgetItem *item = list == nullptr ? nullptr : list->currentItem();
-    if (item == nullptr || m_selectedRepositoryPath.isEmpty() || m_gitBusy) {
+    if (item == nullptr || item->isHidden()
+        || m_selectedRepositoryPath.isEmpty() || m_gitBusy) {
         return;
     }
     BranchTarget target;
@@ -210,6 +212,8 @@ void WorkspacePage::connectUi()
             this, &WorkspacePage::updateSwitchButton);
     connect(m_remoteCandidates, &QListWidget::itemSelectionChanged,
             this, &WorkspacePage::updateSwitchButton);
+    connect(m_branchSearch, &QLineEdit::textChanged,
+            this, [this] { applyBranchFilter(); });
     connect(m_branchTabs, &QTabWidget::currentChanged,
             this, [this] { updateSwitchButton(); });
     connect(m_localBranches, &QListWidget::itemDoubleClicked,
@@ -332,7 +336,6 @@ void WorkspacePage::clearBranchDetails(const QString &message)
     m_worktreeStatusCard->style()->polish(m_worktreeStatusCard);
     m_localBranches->clear();
     m_remoteCandidates->clear();
-    m_allRemoteBranches->clear();
     m_refreshButton->setEnabled(false);
     updateSwitchButton();
 }
@@ -360,9 +363,25 @@ void WorkspacePage::setBranchCatalog(const BranchCatalog &catalog)
         item->setData(BranchNameRole, branch);
         item->setToolTip(QStringLiteral("切换时创建同名本地跟踪分支"));
     }
-    m_allRemoteBranches->clear();
-    m_allRemoteBranches->addItems(catalog.remoteBranches);
+    applyBranchFilter();
     m_refreshButton->setEnabled(!m_gitBusy);
+    updateSwitchButton();
+}
+
+void WorkspacePage::applyBranchFilter()
+{
+    const QString query = m_branchSearch->text().trimmed();
+    const QList<QListWidget *> lists {m_localBranches, m_remoteCandidates};
+    for (QListWidget *list : lists) {
+        for (int row = 0; row < list->count(); ++row) {
+            QListWidgetItem *item = list->item(row);
+            const QString branchName = item->data(BranchNameRole).toString();
+            item->setHidden(!fuzzyBranchNameMatches(branchName, query));
+        }
+        if (list->currentItem() != nullptr && list->currentItem()->isHidden()) {
+            list->setCurrentItem(nullptr);
+        }
+    }
     updateSwitchButton();
 }
 
@@ -379,6 +398,7 @@ void WorkspacePage::updateSwitchButton()
     QListWidget *list = activeSwitchList();
     m_switchButton->setEnabled(!m_gitBusy && list != nullptr
                                && list->currentItem() != nullptr
+                               && !list->currentItem()->isHidden()
                                && !m_selectedRepositoryPath.isEmpty());
 }
 

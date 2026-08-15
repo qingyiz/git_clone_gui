@@ -167,14 +167,19 @@ void WorkspacePage::createUi()
     worktreeStatusLayout->addWidget(m_worktreeStatusDetails);
     branchLayout->addWidget(m_worktreeStatusCard);
 
+    m_branchSearch = new QLineEdit(branchCard);
+    m_branchSearch->setObjectName(QStringLiteral("workspaceBranchSearch"));
+    m_branchSearch->setPlaceholderText(
+        QStringLiteral("搜索分支（支持少量错字）…"));
+    m_branchSearch->setClearButtonEnabled(true);
+    branchLayout->addWidget(m_branchSearch);
+
     m_branchTabs = new QTabWidget(branchCard);
     m_branchTabs->setObjectName(QStringLiteral("workspaceBranchTabs"));
     m_localBranches = branchList(m_branchTabs, QStringLiteral("workspaceLocalBranches"));
     m_remoteCandidates = branchList(m_branchTabs, QStringLiteral("workspaceRemoteCandidates"));
-    m_allRemoteBranches = branchList(m_branchTabs, QStringLiteral("workspaceAllRemoteBranches"));
     m_branchTabs->addTab(m_localBranches, QStringLiteral("本地分支"));
     m_branchTabs->addTab(m_remoteCandidates, QStringLiteral("远端待跟踪"));
-    m_branchTabs->addTab(m_allRemoteBranches, QStringLiteral("全部远端"));
     branchLayout->addWidget(m_branchTabs, 1);
     auto *actions = new QHBoxLayout;
     auto *hint = new QLabel(QStringLiteral("双击分支也可以直接切换"), branchCard);

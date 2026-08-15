@@ -1,5 +1,6 @@
 #include "application/WorkspaceService.h"
 #include "application/WorkspaceConfigurationStore.h"
+#include "presentation/BranchNameMatcher.h"
 #include "presentation/WorkspacePage.h"
 #include "presentation/AppStyle.h"
 #include "presentation/RepositoryTree.h"
@@ -9,6 +10,7 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFrame>
 #include <QPixmap>
@@ -77,8 +79,25 @@ private slots:
     void reportsWorkspaceRootSaveFailureWithoutClearingInput();
     void repositoryTreeUsesSemanticIconsAndUnifiedRows();
     void loadsAndSwitchesLocalAndRemoteBranches();
+    void branchNameMatcherToleratesBoundedTypos();
+    void filtersThousandBranchListsWithoutGitRequests();
     void renderWorkspaceSnapshot();
 };
+
+namespace {
+
+int visibleItemCount(const QListWidget *list)
+{
+    int visible = 0;
+    for (int row = 0; row < list->count(); ++row) {
+        if (!list->item(row)->isHidden()) {
+            ++visible;
+        }
+    }
+    return visible;
+}
+
+} // namespace
 
 void TestWorkspacePresentation::restoresAndPersistsWorkspaceRootWithoutAutomaticScan()
 {
@@ -262,6 +281,11 @@ void TestWorkspacePresentation::loadsAndSwitchesLocalAndRemoteBranches()
         page.findChild<QPushButton *>(QStringLiteral("workspaceSwitchButton"));
     QCOMPARE(local->count(), 2);
     QCOMPARE(remote->count(), 1);
+    QCOMPARE(tabs->count(), 2);
+    QCOMPARE(tabs->tabText(0), QStringLiteral("本地分支"));
+    QCOMPARE(tabs->tabText(1), QStringLiteral("远端待跟踪"));
+    QVERIFY(page.findChild<QListWidget *>(QStringLiteral("workspaceAllRemoteBranches"))
+            == nullptr);
     QVERIFY(page.findChild<QLabel *>(QStringLiteral("workspaceCurrentBranch"))->text()
                 .contains(QStringLiteral("main")));
     QFrame *worktreeCard =
@@ -299,6 +323,122 @@ void TestWorkspacePresentation::loadsAndSwitchesLocalAndRemoteBranches()
     QCOMPARE(static_cast<int>(service.switchedTarget.kind),
              static_cast<int>(BranchTarget::Kind::Remote));
     QCOMPARE(service.switchedTarget.name, QStringLiteral("origin/feature/new"));
+}
+
+void TestWorkspacePresentation::filtersThousandBranchListsWithoutGitRequests()
+{
+    FakeWorkspaceService service;
+    WorkspacePage page(&service);
+    QTreeWidget *tree =
+        page.findChild<QTreeWidget *>(QStringLiteral("workspaceRepositoryTree"));
+    emit service.scanFinished(
+        QStringLiteral("/workspace"),
+        QVector<RepositoryInfo> {{QStringLiteral("/workspace/project"),
+                                  QStringLiteral("project")}},
+        0);
+    tree->setCurrentItem(tree->topLevelItem(0)->child(0));
+    QCOMPARE(service.loadedRepositories.size(), 1);
+
+    BranchCatalog catalog;
+    catalog.currentBranch = QStringLiteral("feature/local-0000");
+    catalog.localBranches.reserve(1000);
+    catalog.remoteCandidates.reserve(1000);
+    for (int index = 0; index < 999; ++index) {
+        catalog.localBranches.append(
+            QStringLiteral("feature/local-%1").arg(index, 4, 10, QLatin1Char('0')));
+        catalog.remoteCandidates.append(
+            QStringLiteral("origin/feature/remote-%1")
+                .arg(index, 4, 10, QLatin1Char('0')));
+    }
+    catalog.localBranches.append(QStringLiteral("HotFix/TARGET-Local"));
+    catalog.remoteCandidates.append(QStringLiteral("upstream/TARGET-Remote"));
+    emit service.gitBusyChanged(false);
+    emit service.branchesLoaded(QStringLiteral("/workspace/project"), catalog);
+
+    QLineEdit *search =
+        page.findChild<QLineEdit *>(QStringLiteral("workspaceBranchSearch"));
+    QListWidget *local =
+        page.findChild<QListWidget *>(QStringLiteral("workspaceLocalBranches"));
+    QListWidget *remote =
+        page.findChild<QListWidget *>(QStringLiteral("workspaceRemoteCandidates"));
+    QTabWidget *tabs =
+        page.findChild<QTabWidget *>(QStringLiteral("workspaceBranchTabs"));
+    QPushButton *switchButton =
+        page.findChild<QPushButton *>(QStringLiteral("workspaceSwitchButton"));
+    QCOMPARE(local->count(), 1000);
+    QCOMPARE(remote->count(), 1000);
+
+    const int gitCallsBeforeFilter = service.loadedRepositories.size();
+    QElapsedTimer timer;
+    timer.start();
+    search->setText(QStringLiteral(" targat "));
+    const qint64 elapsedMilliseconds = timer.elapsed();
+    QVERIFY2(elapsedMilliseconds <= 250,
+             qPrintable(QStringLiteral("千级分支筛选耗时 %1ms")
+                            .arg(elapsedMilliseconds)));
+    QCOMPARE(service.loadedRepositories.size(), gitCallsBeforeFilter);
+    QCOMPARE(visibleItemCount(local), 1);
+    QCOMPARE(visibleItemCount(remote), 1);
+
+    local->setCurrentRow(999);
+    QVERIFY(switchButton->isEnabled());
+    search->setText(QStringLiteral("no-such-branch"));
+    QCOMPARE(visibleItemCount(local), 0);
+    QCOMPARE(visibleItemCount(remote), 0);
+    QVERIFY(!switchButton->isEnabled());
+
+    search->setText(QStringLiteral("TARGTE"));
+    tabs->setCurrentWidget(remote);
+    QCOMPARE(visibleItemCount(remote), 1);
+    remote->setCurrentRow(999);
+    QVERIFY(switchButton->isEnabled());
+    switchButton->click();
+    QCOMPARE(static_cast<int>(service.switchedTarget.kind),
+             static_cast<int>(BranchTarget::Kind::Remote));
+    QCOMPARE(service.switchedTarget.name, QStringLiteral("upstream/TARGET-Remote"));
+
+    emit service.gitBusyChanged(false);
+    emit service.branchesLoaded(QStringLiteral("/workspace/project"), catalog);
+    QCOMPARE(search->text(), QStringLiteral("TARGTE"));
+    QCOMPARE(visibleItemCount(local), 1);
+    QCOMPARE(visibleItemCount(remote), 1);
+    search->clear();
+    QCOMPARE(visibleItemCount(local), 1000);
+    QCOMPARE(visibleItemCount(remote), 1000);
+    QCOMPARE(service.loadedRepositories.size(), gitCallsBeforeFilter);
+}
+
+void TestWorkspacePresentation::branchNameMatcherToleratesBoundedTypos()
+{
+    struct MatchCase {
+        QString branchName;
+        QString query;
+        bool expected;
+    };
+    const QVector<MatchCase> cases {
+        {QStringLiteral("feature/dashboard"), QStringLiteral(" DASHBOARD "), true},
+        {QStringLiteral("main"), QStringLiteral("ma"), true},
+        {QStringLiteral("main"), QStringLiteral("mi"), false},
+        {QStringLiteral("main"), QStringLiteral("man"), true},
+        {QStringLiteral("main"), QStringLiteral("mian"), true},
+        {QStringLiteral("main"), QStringLiteral("mxxn"), false},
+        {QStringLiteral("feature"), QStringLiteral("feture"), true},
+        {QStringLiteral("abcdef"), QStringLiteral("abcxdef"), true},
+        {QStringLiteral("abcdef"), QStringLiteral("abqdef"), true},
+        {QStringLiteral("abcdef"), QStringLiteral("abdcef"), true},
+        {QStringLiteral("abcdef"), QStringLiteral("abxyef"), true},
+        {QStringLiteral("abcdef"), QStringLiteral("abxyzf"), false},
+        {QStringLiteral("origin/feature/dashboard"),
+         QStringLiteral("feture/dashbord"), true},
+        {QStringLiteral("abcdefghijkl"), QStringLiteral("abcdWXYhijkl"), true},
+        {QStringLiteral("abcdefghijkl"), QStringLiteral("abcdWXYZijkl"), false},
+        {QStringLiteral("anything"), QString(), true}
+    };
+
+    for (const MatchCase &matchCase : cases) {
+        QCOMPARE(fuzzyBranchNameMatches(matchCase.branchName, matchCase.query),
+                 matchCase.expected);
+    }
 }
 
 void TestWorkspacePresentation::renderWorkspaceSnapshot()

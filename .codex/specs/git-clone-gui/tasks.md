@@ -4,7 +4,7 @@
 >
 > 状态：执行中
 >
-> 最近更新：2026-08-14
+> 最近更新：2026-08-15
 
 ## 执行策略
 
@@ -540,6 +540,51 @@
   - 验证：Debug/Release CTest、运行时 UI、Info.plist、自包含交付、workflow YAML/脚本审查、GitHub Actions 三个 job、Release API 正文与附件。
   - 实施记录：根 CMake project 已设为 0.1.4 并以 app 私有编译定义注入运行时；MainWindow 读取 applicationVersion，在侧栏显示“版本 0.1.4”；Debug/Release 编译定义与 Info.plist 的 short/build version 均为 0.1.4。新增 `docs/releases/v0.1.4.md`，release job checkout 标签并优先使用同名说明文件，未来标签缺失文件时回退自动说明。Ruby YAML、Bash 语法和 diff check 通过；Qt 5.15.2 Debug/Release 全部 11/11 CTest 通过，自包含安装 Bundle、ad-hoc 严格签名与 0.1.4 plist 验证通过。首轮标签 run `31720507955` 暴露 Qt 6.8 对 `findChild<RepositoryTree *>` 的元对象静态断言，专用控件补充 `Q_OBJECT` 后本机两套 11/11 回归通过。修复标签 run `31720858555` 的 macOS arm64、Windows x64 与 Publish GitHub Release 三个 job 全部成功；公开 Release `v0.1.4` 正文与说明文件一致。Release API 报告 DMG 23,953,384 bytes、SHA-256 `ef78bea4e1a890c277e3b7e7351327c8c1eae9900564eefd94dcf83cd16bbfb4`，Windows ZIP 22,786,291 bytes、SHA-256 `112a3254c66b8624f1ee41e0f301cdbb7cb62d08a44cd6871ec987bc0fbbcd1a`，两附件状态均为 `uploaded`。
 
+- [x] TASK-036：精简分支页签并增加千级列表搜索
+  - 类型：required
+  - 需求：REQ-013 / AC-013.4～AC-013.7、AC-013.19～AC-013.20；NFR-017
+  - 设计：DEC-020、DEC-028；ARCH-010、ARCH-011；BUILD-009；PROP-018、PROP-019、PROP-028
+  - 单一变更原因：移除没有操作价值的完整远端展示，并让数百至上千个可切换分支可通过关键词直接定位。
+  - 模块/构建单元：`git_clone_presentation` 与 `test_workspace_presentation`。
+  - 架构约束：ARCH-010、ARCH-011 / BUILD-009；只改 WorkspacePage 表示与本地筛选，不修改 WorkspaceService、BranchCatalog、Git refs 读取或 switch 参数。
+  - 依赖变化：无新增或移除 target/link/include 方向；presentation 删除一个 QListWidget 成员并增加现有 QtWidgets QLineEdit 交互。
+  - 平台/交付物：macOS arm64 `.app` 与 Windows x64 `.exe` 的工作区分支详情交互更新；产物路径、Bundle/ZIP 结构与运行时闭包不变。
+  - 依赖：TASK-035。
+  - 修改范围：`WorkspacePage.h/.cpp`、`WorkspacePageUi.cpp`、`TestWorkspacePresentation.cpp`、README 与 Spec；不改 application/infrastructure/core、CMake target、部署或发布脚本。
+  - 产出：仅本地/远端待跟踪两个页签；共享搜索框、大小写不敏感包含筛选、清空恢复、无匹配禁用切换、新 catalog 沿用筛选词。
+  - 验证：presentation 功能测试和 1,000 项 ≤250ms 容量测试；Debug/Release 全 CTest；snapshot；结构、Spec、无跨层依赖审查。
+  - 实施记录：`WorkspacePageUi.cpp` 已移除只读“全部远端”列表和页签，分支详情仅保留本地/远端待跟踪两个可操作页签；`BranchCatalog.remoteBranches`、Git refs 读取与候选差集保持不变。新增共享 `workspaceBranchSearch`，按 trim 后关键词对两个列表的原始 `BranchNameRole` 做大小写不敏感包含匹配；隐藏当前项会清除选择并禁用切换，新 catalog 仍复用当前关键词，清空恢复全部项，筛选不调用 service。测试覆盖两页签/旧控件不存在、大小写与空白、无匹配、清空、页签切换、隐藏项不可切换、远端 target 保持、新 catalog 沿用关键词，以及本地/远端各 1,000 项在 250ms 门槛内完成且零 Git 读取。Qt 5.15.2 Debug/Release 全量 CTest 均 11/11 通过；`/tmp/git-clone-gui-branch-search.png` 人工确认搜索框、双页签、列表和底部操作区布局完整。结构检查为 56 个源文件，WorkspacePage 415 行仍低于约 420 行预算；无 CMake、target/link、跨层 include 或发布产物契约变化。
+
+- [x] TASK-037：为分支搜索增加有限错字容忍
+  - 类型：required
+  - 需求：REQ-013 / AC-013.20；NFR-017
+  - 设计：DEC-028、DEC-029；ARCH-010；BUILD-009；PROP-028、PROP-029
+  - 单一变更原因：让记忆不完整或误输一至数个字母的用户仍能定位分支，同时限制短词误命中和千级列表计算成本。
+  - 模块/构建单元：`git_clone_presentation` 与 `test_workspace_presentation`。
+  - 架构约束：ARCH-010 / BUILD-009；匹配算法为 presentation 内无状态纯 helper，WorkspacePage 只管理列表/选择；不访问 WorkspaceService、Git、文件系统或持久化。
+  - 依赖变化：现有 presentation target 新增 `BranchNameMatcher.*` 源文件；无新 target、link、Qt component、第三方库或跨层 include。
+  - 平台/交付物：macOS arm64 `.app` 与 Windows x64 `.exe` 的工作区搜索交互更新；产物路径、Bundle/ZIP 结构与运行时闭包不变。
+  - 依赖：TASK-036。
+  - 修改范围：`src/presentation/BranchNameMatcher.*`、`WorkspacePage.cpp`、`WorkspacePageUi.cpp`、presentation CMake、`TestWorkspacePresentation.cpp`、README 与 Spec；不改 WorkspaceService/BranchCatalog、Git refs/switch、core/infrastructure、部署或发布脚本。
+  - 产出：包含匹配优先；3～4/5～8/9+ 字符分别容忍 1/2/3 次插入、删除、替换或相邻颠倒；1～2 字符只精确包含；分支名任意连续区域可命中。
+  - 验证：matcher 表驱动阈值/编辑类型测试；本地/远端各 1,000 项错字筛选 ≤250ms、零 Git 调用、切换 target 回归；Debug/Release 全 CTest；结构、Spec 和依赖审查。
+  - 实施记录：新增 75 行纯 presentation helper `BranchNameMatcher.cpp`，先对 trim/case-fold 文本做包含匹配，未命中且关键词至少 3 字符时，以三行滚动动态规划计算查询对分支名任意连续区域的 Damerau-Levenshtein 最小距离；3～4/5～8/9+ 字符阈值分别为 1/2/3，覆盖插入、删除、替换与相邻颠倒，短词不启用容错。`WorkspacePage::applyBranchFilter()` 只把原 `contains` 替换为 helper 调用，页面选择/隐藏/按钮状态、BranchKind/BranchName、service 与 Git 行为不变；搜索占位文案和 README 已说明有限错字支持。表驱动测试覆盖 trim/大小写、连续区域、四类编辑、短词与三档阈值内外；既有本地/远端各 1,000 项测试改用 `targat`/`TARGTE` 错字，验证仅目标分支可见、远端 target 正确、刷新沿用关键词、250ms 门槛和零 Git 读取。Qt 5.15.2 Debug/Release 全量 CTest 均 11/11 通过，`git diff --check` 通过。结构检查为 58 个源文件，WorkspacePage 416 行仍低于约 420 行，matcher cpp 75 行；presentation CMake 仅登记两个源文件，无新 target/link/component/第三方依赖或跨层 include。
+
+- [ ] TASK-038：发布包含分支搜索改进的 `v0.1.5`
+  - 类型：required
+  - 需求：REQ-011 / AC-011.10
+  - 设计：DEC-027、DEC-030；ARCH-009；BUILD-003、BUILD-005、BUILD-008；PROP-027
+  - 单一变更原因：把已验收的双页签与模糊搜索功能以版本一致、说明完整、可下载的双平台 Release 正式交付。
+  - 模块/构建单元：根/app/presentation、release 文档、既有测试与 GitHub Actions 发布流水线。
+  - 架构约束：ARCH-009 / BUILD-003、BUILD-005、BUILD-008；版本继续只来自 CMake project；不修改发布脚本、业务 target 依赖或平台产物契约。
+  - 依赖变化：无新 target、link、Qt component、第三方库或 Actions；仅新增同名 Release 说明。
+  - 平台/交付物：`v0.1.5`、macOS arm64 DMG、Windows x64 ZIP 与 GitHub Release。
+  - 依赖：TASK-037。
+  - 修改范围：根 CMake、README、版本 UI 测试、`docs/releases/v0.1.5.md` 与 Spec；外部操作为提交、PR 合并、标签推送及 Release 验证。
+  - 产出：项目/运行时/Bundle/侧栏版本 0.1.5，中文更新说明，main 合并提交、标签和带两个平台附件的最新公开 Release。
+  - 验证：Debug/Release 全 CTest、版本字符串与 Info.plist、diff/Spec 检查、PR/main/标签关系、GitHub Actions 三个 job、Release 正文/附件/API。
+  - 实施记录：执行中；本地版本、说明与回归完成后提交 PR，线上证据待标签流水线完成后回写。
+
 ## 执行波次
 
 | 波次 | 任务 | 并行性 | 完成后仓库状态 |
@@ -577,6 +622,9 @@
 | 31 | TASK-033 | 顺序 | 有效恢复目录在启动后自动扫描一次 |
 | 32 | TASK-034 | 顺序 | 大目录扫描额外开销降低且保持完整发现 |
 | 33 | TASK-035 | 顺序 | `v0.1.4` 版本、说明和两平台附件在 GitHub Release 一致交付 |
+| 34 | TASK-036 | 顺序 | 分支详情只保留两个可操作页签，千级分支可直接搜索并安全切换 |
+| 35 | TASK-037 | 顺序 | 分支搜索容忍有限错字且保持短词精度和千级响应性 |
+| 36 | TASK-038 | 顺序 | `v0.1.5` 版本、说明和两平台附件在最新 GitHub Release 一致交付 |
 
 ## 覆盖检查
 
@@ -592,9 +640,9 @@
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
-| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件、ad-hoc Bundle 严格验证 | 已完成 |
+| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035, TASK-038 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件、ad-hoc Bundle 严格验证 | 执行中 |
 | REQ-012 | TASK-027, TASK-028, TASK-032 | navigation store/presentation、snapshot、运行中切页/关闭 | 已完成 |
-| REQ-013 | TASK-025, TASK-026, TASK-028～TASK-031, TASK-033～TASK-034 | contract、扫描/Git 集成与性能、工作目录存储/自动扫描、工作树风险、页面 fake service、自绘树与全量交付回归 | 已完成 |
+| REQ-013 | TASK-025, TASK-026, TASK-028～TASK-031, TASK-033～TASK-034, TASK-036～TASK-037 | contract、扫描/Git 集成与性能、工作目录存储/自动扫描、工作树风险、容错分支搜索、页面 fake service、自绘树与全量交付回归 | 已完成 |
 
 ## 完成门槛
 
@@ -624,3 +672,6 @@
 - [x] TASK-030～TASK-031 完成，AC-013.13～AC-013.17 / PROP-022～PROP-023 有存储、真实 Git、UI 语义与交付证据。
 - [x] TASK-032～TASK-034 完成，AC-012.5、AC-013.13、AC-013.18 / PROP-024～PROP-026 有导航存储、启动自动扫描、性能与交付证据。
 - [x] TASK-035 完成，AC-011.8～AC-011.9 / PROP-027 有版本、UI、Bundle、Actions 与 Release API 证据。
+- [x] TASK-036 完成，AC-013.19～AC-013.20 / PROP-028 有双页签、筛选正确性、千级容量与 snapshot 证据。
+- [x] TASK-037 完成，AC-013.20 / PROP-029 有编辑类型、阈值内外、短词精度和 2,000 项模糊容量证据。
+- [ ] TASK-038 完成，AC-011.10 / PROP-027 有 0.1.5 版本、main、标签、Actions 与 Release API 证据。

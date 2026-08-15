@@ -149,7 +149,7 @@ private slots:
 
 void TestPresentation::initTestCase()
 {
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.4"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.5"));
     qRegisterMetaType<NotificationSeverity>();
 }
 
@@ -318,7 +318,7 @@ void TestPresentation::firstLaunchCreatesOneCardAndUsesCompactSize()
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("configurationPanel")) != nullptr);
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("executionPanel")) != nullptr);
     QCOMPARE(window.findChild<QLabel *>(QStringLiteral("navigationVersionLabel"))->text(),
-             QStringLiteral("版本 0.1.4\n本地 Git 工具"));
+             QStringLiteral("版本 0.1.5\n本地 Git 工具"));
 }
 
 void TestPresentation::navigationSwitchesPagesAndPreservesCloneState()
