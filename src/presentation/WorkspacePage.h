@@ -63,6 +63,7 @@ private:
     void clearBranchDetails(const QString &message);
     void setBranchCatalog(const BranchCatalog &catalog);
     void setWorkingTreeStatus(const WorkingTreeStatus &status);
+    void applyBranchFilter();
     void setStatus(const QString &message, const QString &state = QStringLiteral("normal"));
     void updateSwitchButton();
     QListWidget *activeSwitchList() const;
@@ -82,10 +83,10 @@ private:
     QLabel *m_worktreeStatusTitle = nullptr;
     QLabel *m_worktreeStatusDetails = nullptr;
     QLabel *m_statusLabel = nullptr;
+    QLineEdit *m_branchSearch = nullptr;
     QTabWidget *m_branchTabs = nullptr;
     QListWidget *m_localBranches = nullptr;
     QListWidget *m_remoteCandidates = nullptr;
-    QListWidget *m_allRemoteBranches = nullptr;
     QPushButton *m_refreshButton = nullptr;
     QPushButton *m_switchButton = nullptr;
     QString m_rootPath;
