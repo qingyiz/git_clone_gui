@@ -2,7 +2,7 @@
 
 > 阶段：tasks
 >
-> 状态：执行中
+> 状态：已完成
 >
 > 最近更新：2026-08-15
 
@@ -570,7 +570,7 @@
   - 验证：matcher 表驱动阈值/编辑类型测试；本地/远端各 1,000 项错字筛选 ≤250ms、零 Git 调用、切换 target 回归；Debug/Release 全 CTest；结构、Spec 和依赖审查。
   - 实施记录：新增 75 行纯 presentation helper `BranchNameMatcher.cpp`，先对 trim/case-fold 文本做包含匹配，未命中且关键词至少 3 字符时，以三行滚动动态规划计算查询对分支名任意连续区域的 Damerau-Levenshtein 最小距离；3～4/5～8/9+ 字符阈值分别为 1/2/3，覆盖插入、删除、替换与相邻颠倒，短词不启用容错。`WorkspacePage::applyBranchFilter()` 只把原 `contains` 替换为 helper 调用，页面选择/隐藏/按钮状态、BranchKind/BranchName、service 与 Git 行为不变；搜索占位文案和 README 已说明有限错字支持。表驱动测试覆盖 trim/大小写、连续区域、四类编辑、短词与三档阈值内外；既有本地/远端各 1,000 项测试改用 `targat`/`TARGTE` 错字，验证仅目标分支可见、远端 target 正确、刷新沿用关键词、250ms 门槛和零 Git 读取。Qt 5.15.2 Debug/Release 全量 CTest 均 11/11 通过，`git diff --check` 通过。结构检查为 58 个源文件，WorkspacePage 416 行仍低于约 420 行，matcher cpp 75 行；presentation CMake 仅登记两个源文件，无新 target/link/component/第三方依赖或跨层 include。
 
-- [ ] TASK-038：发布包含分支搜索改进的 `v0.1.5`
+- [x] TASK-038：发布包含分支搜索改进的 `v0.1.5`
   - 类型：required
   - 需求：REQ-011 / AC-011.10
   - 设计：DEC-027、DEC-030；ARCH-009；BUILD-003、BUILD-005、BUILD-008；PROP-027
@@ -583,7 +583,7 @@
   - 修改范围：根 CMake、README、版本 UI 测试、`docs/releases/v0.1.5.md` 与 Spec；外部操作为提交、PR 合并、标签推送及 Release 验证。
   - 产出：项目/运行时/Bundle/侧栏版本 0.1.5，中文更新说明，main 合并提交、标签和带两个平台附件的最新公开 Release。
   - 验证：Debug/Release 全 CTest、版本字符串与 Info.plist、diff/Spec 检查、PR/main/标签关系、GitHub Actions 三个 job、Release 正文/附件/API。
-  - 实施记录：执行中；本地版本、说明与回归完成后提交 PR，线上证据待标签流水线完成后回写。
+  - 实施记录：项目版本提升为 0.1.5，运行时侧栏与 macOS Bundle short/build version 均验证为 0.1.5；新增 `docs/releases/v0.1.5.md`，说明双页签、千级列表搜索、有限错字容忍、性能/安全边界、两平台附件与签名提示。Qt 5.15.2 Debug/Release 全量 CTest 均 11/11 通过，自包含 macOS Bundle、Spec 和 diff check 通过。功能提交 `219190f` 经 PR #8 的 run `31889265928` 完成 macOS arm64、Windows x64 原生构建测试后，合并为 `main` 提交 `90df97d`；`v0.1.5` 注释标签指向同一提交。标签 run `31889404772` 的 macOS arm64、Windows x64 与 Publish GitHub Release 三个 job 全部成功；公开 Release `v0.1.5` 为最新正式版本且正文与说明文件一致。Release API 报告 DMG 24,303,794 bytes、SHA-256 `bda0ad48088b12b3a60284b09592ffa2d4b3cdbd6251919ca93b4cfdb0b4fdfe`，Windows ZIP 22,790,403 bytes、SHA-256 `608179aeddd8fcf1a92290a5afb4d454a4e1afafddf1aa9657d8425ccb188d01`，两附件状态均为 `uploaded`。
 
 ## 执行波次
 
@@ -640,7 +640,7 @@
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
-| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035, TASK-038 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件、ad-hoc Bundle 严格验证 | 执行中 |
+| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035, TASK-038 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件、ad-hoc Bundle 严格验证 | 已完成 |
 | REQ-012 | TASK-027, TASK-028, TASK-032 | navigation store/presentation、snapshot、运行中切页/关闭 | 已完成 |
 | REQ-013 | TASK-025, TASK-026, TASK-028～TASK-031, TASK-033～TASK-034, TASK-036～TASK-037 | contract、扫描/Git 集成与性能、工作目录存储/自动扫描、工作树风险、容错分支搜索、页面 fake service、自绘树与全量交付回归 | 已完成 |
 
@@ -674,4 +674,4 @@
 - [x] TASK-035 完成，AC-011.8～AC-011.9 / PROP-027 有版本、UI、Bundle、Actions 与 Release API 证据。
 - [x] TASK-036 完成，AC-013.19～AC-013.20 / PROP-028 有双页签、筛选正确性、千级容量与 snapshot 证据。
 - [x] TASK-037 完成，AC-013.20 / PROP-029 有编辑类型、阈值内外、短词精度和 2,000 项模糊容量证据。
-- [ ] TASK-038 完成，AC-011.10 / PROP-027 有 0.1.5 版本、main、标签、Actions 与 Release API 证据。
+- [x] TASK-038 完成，AC-011.10 / PROP-027 有 0.1.5 版本、main、标签、Actions 与 Release API 证据。
