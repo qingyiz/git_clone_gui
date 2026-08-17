@@ -2,9 +2,9 @@
 
 > 阶段：tasks
 >
-> 状态：已完成
+> 状态：已更新
 >
-> 最近更新：2026-08-15
+> 最近更新：2026-08-17
 
 ## 执行策略
 
@@ -585,6 +585,51 @@
   - 验证：Debug/Release 全 CTest、版本字符串与 Info.plist、diff/Spec 检查、PR/main/标签关系、GitHub Actions 三个 job、Release 正文/附件/API。
   - 实施记录：项目版本提升为 0.1.5，运行时侧栏与 macOS Bundle short/build version 均验证为 0.1.5；新增 `docs/releases/v0.1.5.md`，说明双页签、千级列表搜索、有限错字容忍、性能/安全边界、两平台附件与签名提示。Qt 5.15.2 Debug/Release 全量 CTest 均 11/11 通过，自包含 macOS Bundle、Spec 和 diff check 通过。功能提交 `219190f` 经 PR #8 的 run `31889265928` 完成 macOS arm64、Windows x64 原生构建测试后，合并为 `main` 提交 `90df97d`；`v0.1.5` 注释标签指向同一提交。标签 run `31889404772` 的 macOS arm64、Windows x64 与 Publish GitHub Release 三个 job 全部成功；公开 Release `v0.1.5` 为最新正式版本且正文与说明文件一致。Release API 报告 DMG 24,303,794 bytes、SHA-256 `bda0ad48088b12b3a60284b09592ffa2d4b3cdbd6251919ca93b4cfdb0b4fdfe`，Windows ZIP 22,790,403 bytes、SHA-256 `608179aeddd8fcf1a92290a5afb4d454a4e1afafddf1aa9657d8425ccb188d01`，两附件状态均为 `uploaded`。
 
+- [x] TASK-039：重构为低饱和紧凑的桌面工具视觉
+  - 类型：required
+  - 需求：REQ-006 / AC-006.1～AC-006.7；NFR-018
+  - 设计：DEC-031；ARCH-004、ARCH-006、ARCH-010；BUILD-003、BUILD-004、BUILD-009；PROP-030
+  - 单一变更原因：消除深色大侧栏、整行高饱和选中、多层大圆角卡片、胶囊泛滥和过量留白组合产生的模板化“AI 感”。
+  - 模块/构建单元：`git_clone_presentation`、`test_presentation`、`test_workspace_presentation`。
+  - 架构约束：ARCH-004、ARCH-006、ARCH-010 / BUILD-003、BUILD-004、BUILD-009；只改表示层样式、间距、文案层级和必要的自绘色值，不改页面实例、对象名、controller/service/store 调用或 Git 操作。
+  - 依赖变化：无新 target、link、Qt component、第三方库或跨层 include；只修改既有 presentation 源文件与测试。
+  - 平台/交付物：macOS arm64 `.app` 与 Windows x64 `.exe` 的表示层更新；产物路径、Bundle/ZIP 结构、版本与运行时闭包不变。
+  - 依赖：TASK-038。
+  - 修改范围：`src/presentation/AppStyle.cpp`、`MainWindow.cpp`、`ClonePageUi.cpp`、`WorkspacePageUi.cpp`、`ChildRepositoryCard.cpp`、`BranchSelector.cpp`、`RepositoryTree.cpp`、对应 presentation tests 与 Spec；不改 core/application/infrastructure、CMake target、部署/发布脚本。
+  - 产出：狭幅中性侧栏 + 小面积导航指示、4/8/12/16 紧凑间距、6～8px 容器圆角、收敛的标题/徽标/状态层级、统一中性/accent/语义色，保持双页所有功能。
+  - 验证：新增导航宽度/属性与标题尺寸断言；Debug/Release 全 CTest；克隆页、工作区 before/after snapshot 人工比较；`git diff --check`、结构/依赖审查；macOS `.app` 构建与启动冒烟。
+  - 实施记录：以 Qt 5.15.2/macOS 原生基线截图定位到 188px 深色侧栏、整行高饱和蓝选中、12/16px 嵌套卡片、胶囊徽标与大留白组合造成的模板化观感。`AppStyle` 现统一为低饱和中性灰、6～8px 圆角、4/8/12/16 紧凑间距和仅用于主操作/focus/指示的蓝色；侧栏缩至 164px，checked 项使用中性浅底 + 3px 蓝色指示，版本降为单行次要文本。克隆页移除重复大 G 标识，两页标题、边距、面板与内部间距均收紧；子仓库序号与计数徽标改为低对比。`BranchSelector` 保持 AC-009.6 的 8px 自绘圆角，`RepositoryTree` 保持 38px 行高，两者同步中性/accent 色；Retina 像素测试改为按 devicePixelRatio 取样，修复旧测试实际采到背景的假阳性。新增侧栏 164px、导航非高饱和背景、26px 品牌标识与标题 ≤20px 断言。Debug/Release 全量 CTest 均 11/11 通过；表示层定向 2/2 通过；`before-clone.png`/`before-workspace.png` 与 `after-clone.png`/`after-workspace.png` 人工对比确认蓝色面积、圆角和卡片嵌套明显收敛。`git diff --check`、presentation 跨层 include 扫描和结构检查通过；`AppStyle.cpp` 434 行低于 480 行预算，无新 target/link/component/第三方依赖。Debug/Release `.app` 均构建成功，Release 主程序启动后保持运行并可正常 TERM 退出。
+
+- [x] TASK-040：用 Git 分支节点替换侧栏字母占位图标
+  - 类型：required
+  - 需求：REQ-006 / AC-006.8；NFR-018
+  - 设计：DEC-032；ARCH-004、ARCH-006、ARCH-010；BUILD-004、BUILD-009；PROP-031
+  - 单一变更原因：消除 TASK-039 遗留的高饱和 `G` 字母占位，让品牌位具备明确 Git 语义并保持节制的桌面工具视觉。
+  - 模块/构建单元：`git_clone_presentation`、`test_presentation`。
+  - 架构约束：ARCH-004、ARCH-006、ARCH-010 / BUILD-004、BUILD-009；新组件只做 paint/size/accessibility，不拥有导航状态，不访问 controller/service/store/I/O。
+  - 依赖变化：仅向既有 `git_clone_presentation` target 增加两个源码文件；无新 target、link、Qt component、第三方库或跨层 include。
+  - 平台/交付物：macOS arm64 `.app` 与 Windows x64 `.exe` 的侧栏表示层更新；Bundle 应用图标、产物结构与版本不变。
+  - 依赖：TASK-039。
+  - 修改范围：新增 `src/presentation/NavigationBrandMark.{h,cpp}`，修改 presentation CMake、`MainWindow.cpp`、`AppStyle.cpp`、`TestPresentation.cpp` 与 Spec；不改 app 资源、core/application/infrastructure、部署/发布脚本。
+  - 产出：28px 低饱和浅底 Git 分支节点矢量标识，稳定对象名/语义属性/无障碍名称，跨 Qt 5/6 与高 DPI 清晰。
+  - 验证：品牌对象类型、逻辑尺寸、语义属性、无障碍名称与渲染像素断言；Qt 5/macOS Retina snapshot；Debug/Release 全 CTest；`git diff --check`、结构/依赖审查和 `.app` 启动冒烟。
+  - 实施记录：新增 52 行 `NavigationBrandMark` 自绘组件，在 28px 逻辑尺寸内使用 `#E8EDF3` 浅底、`#C8D0DA` 边框与 `#4A668E` 分支线绘制连续路径和三个节点；组件提供 `gitBranch` 语义属性与“Git 分支”无障碍名称。MainWindow 删除 `QLabel("G")` 及固定尺寸组装，AppStyle 删除高饱和 `navigationMark` QSS，既有对象名保持。测试新增非 QLabel、28px、语义/无障碍与 Retina 渲染像素分布断言；`after-brand-icon.png` 人工检查确认小尺寸分支关系清晰、与中性侧栏一致。Qt 5.15.2 Debug/Release 全量 CTest 均 11/11 通过；Release `.app` 启动后保持运行并可正常 TERM 退出。`git diff --check`、presentation 跨层 include 扫描通过；结构为 60 个源文件，NavigationBrandMark 52 行、MainWindow 219 行、AppStyle 427 行，均在预算内，无新 target/link/Qt component/第三方依赖。
+
+- [ ] TASK-041：发布界面优化版本 `v0.1.6`
+  - 类型：required
+  - 需求：REQ-011 / AC-011.11
+  - 设计：DEC-027、DEC-033；ARCH-009；BUILD-003、BUILD-005、BUILD-008；PROP-027
+  - 单一变更原因：把已验收的低饱和紧凑界面和 Git 分支品牌标识以版本一致、说明完整、可下载的双平台 Release 正式交付。
+  - 模块/构建单元：根/app/presentation、release 文档、既有测试与 GitHub Actions 发布流水线。
+  - 架构约束：ARCH-009 / BUILD-003、BUILD-005、BUILD-008；版本继续只来自 CMake project，不修改发布 workflow、签名脚本、业务 target 依赖或平台产物契约。
+  - 依赖变化：无新 target、link、Qt component、第三方库或 Actions；仅新增同名 Release 说明并更新版本断言。
+  - 平台/交付物：`v0.1.6`、macOS arm64 DMG、Windows x64 ZIP 与 GitHub Release。
+  - 依赖：TASK-040。
+  - 修改范围：根 CMake、README、版本 UI 测试、`docs/releases/v0.1.6.md` 与 Spec；外部操作为分支提交、PR 合并、`main` 注释标签推送、Actions 与 Release 验证及证据回写。
+  - 产出：项目/运行时/Bundle/侧栏版本 0.1.6，中文更新说明，main 合并提交、不可移动标签和带两个平台附件的最新公开 Release。
+  - 验证：Debug/Release 全 CTest、版本字符串与 Info.plist、自包含 macOS 安装 Bundle、diff/Spec 检查、PR/main/tag 关系、GitHub Actions 三个标签 job、Release 正文/附件/API 与 SHA-256。
+  - 实施记录：待实施。
+
 ## 执行波次
 
 | 波次 | 任务 | 并行性 | 完成后仓库状态 |
@@ -625,6 +670,9 @@
 | 34 | TASK-036 | 顺序 | 分支详情只保留两个可操作页签，千级分支可直接搜索并安全切换 |
 | 35 | TASK-037 | 顺序 | 分支搜索容忍有限错字且保持短词精度和千级响应性 |
 | 36 | TASK-038 | 顺序 | `v0.1.5` 版本、说明和两平台附件在最新 GitHub Release 一致交付 |
+| 37 | TASK-039 | 顺序 | 克隆页与工作区统一为低饱和、紧凑、少卡片嵌套的成熟桌面工具视觉 |
+| 38 | TASK-040 | 顺序 | 侧栏品牌位以跨平台清晰的 Git 分支节点替代字母占位 |
+| 39 | TASK-041 | 顺序 | `v0.1.6` 版本、说明和两平台附件在最新 GitHub Release 一致交付 |
 
 ## 覆盖检查
 
@@ -635,12 +683,12 @@
 | REQ-003 | TASK-002, TASK-003, TASK-007, TASK-010, TASK-024 | core 参数 + controller + UI | 已完成 |
 | REQ-004 | TASK-001, TASK-004, TASK-005, TASK-011 | Preset/CTest/bundle/README | 已完成 |
 | REQ-005 | TASK-009, TASK-010 | card/presentation tests | 已完成 |
-| REQ-006 | TASK-009, TASK-010, TASK-011, TASK-018 | snapshot + 人工检查 | 已完成 |
+| REQ-006 | TASK-009, TASK-010, TASK-011, TASK-018, TASK-039, TASK-040 | 双页 snapshot + 尺寸/属性断言 + 品牌标识语义/像素 + 人工检查 | 已完成 |
 | REQ-007 | TASK-008, TASK-010, TASK-011 | store 往返 + UI 恢复 | 已完成 |
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
-| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035, TASK-038 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件、ad-hoc Bundle 严格验证 | 已完成 |
+| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035, TASK-038, TASK-041 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件校验值、ad-hoc Bundle 严格验证 | 实施中 |
 | REQ-012 | TASK-027, TASK-028, TASK-032 | navigation store/presentation、snapshot、运行中切页/关闭 | 已完成 |
 | REQ-013 | TASK-025, TASK-026, TASK-028～TASK-031, TASK-033～TASK-034, TASK-036～TASK-037 | contract、扫描/Git 集成与性能、工作目录存储/自动扫描、工作树风险、容错分支搜索、页面 fake service、自绘树与全量交付回归 | 已完成 |
 
@@ -675,3 +723,6 @@
 - [x] TASK-036 完成，AC-013.19～AC-013.20 / PROP-028 有双页签、筛选正确性、千级容量与 snapshot 证据。
 - [x] TASK-037 完成，AC-013.20 / PROP-029 有编辑类型、阈值内外、短词精度和 2,000 项模糊容量证据。
 - [x] TASK-038 完成，AC-011.10 / PROP-027 有 0.1.5 版本、main、标签、Actions 与 Release API 证据。
+- [x] TASK-039 完成，AC-006.1～AC-006.7 / PROP-030 / NFR-018 有尺寸、属性、双页回归和 before/after snapshot 证据。
+- [x] TASK-040 完成，AC-006.8 / PROP-031 / NFR-018 有对象语义、像素、snapshot、全量回归与启动证据。
+- [ ] TASK-041 完成，AC-011.11 / PROP-027 有 0.1.6 版本、main、标签、Actions、Release 正文、双平台附件与校验值证据。

@@ -51,21 +51,15 @@ void ClonePage::createUi()
     auto *root = this;
     root->setObjectName(QStringLiteral("appRoot"));
     auto *rootLayout = new QVBoxLayout(root);
-    rootLayout->setContentsMargins(24, 20, 24, 22);
-    rootLayout->setSpacing(18);
+    rootLayout->setContentsMargins(20, 16, 20, 18);
+    rootLayout->setSpacing(14);
 
     auto *headerLayout = new QHBoxLayout;
-    headerLayout->setSpacing(12);
-    auto *icon = new QLabel(QStringLiteral("G"), root);
-    icon->setObjectName(QStringLiteral("appIcon"));
-    icon->setAlignment(Qt::AlignCenter);
-    icon->setFixedSize(44, 44);
-    headerLayout->addWidget(icon);
     auto *headerText = new QVBoxLayout;
     headerText->setSpacing(1);
     auto *title = new QLabel(QStringLiteral("多仓库克隆"), root);
     title->setObjectName(QStringLiteral("appTitle"));
-    auto *subtitle = new QLabel(QStringLiteral("一次配置父项目与多个子仓库，按顺序安全克隆"), root);
+    auto *subtitle = new QLabel(QStringLiteral("配置并按顺序克隆父项目与子仓库"), root);
     subtitle->setProperty("role", QStringLiteral("muted"));
     headerText->addWidget(title);
     headerText->addWidget(subtitle);
@@ -77,13 +71,13 @@ void ClonePage::createUi()
     rootLayout->addLayout(headerLayout);
 
     auto *contentLayout = new QHBoxLayout;
-    contentLayout->setSpacing(16);
+    contentLayout->setSpacing(12);
     auto *configurationPanel = new QFrame(root);
     configurationPanel->setObjectName(QStringLiteral("configurationPanel"));
     configurationPanel->setProperty("role", QStringLiteral("panel"));
     auto *configurationPanelLayout = new QVBoxLayout(configurationPanel);
-    configurationPanelLayout->setContentsMargins(16, 16, 10, 16);
-    configurationPanelLayout->setSpacing(12);
+    configurationPanelLayout->setContentsMargins(14, 13, 9, 13);
+    configurationPanelLayout->setSpacing(10);
     configurationPanelLayout->addWidget(sectionTitle(QStringLiteral("项目配置"), configurationPanel));
 
     auto *scrollArea = new QScrollArea(configurationPanel);
@@ -92,13 +86,13 @@ void ClonePage::createUi()
     auto *scrollContent = new QWidget(scrollArea);
     scrollContent->setObjectName(QStringLiteral("configurationScrollContent"));
     auto *scrollLayout = new QVBoxLayout(scrollContent);
-    scrollLayout->setContentsMargins(0, 0, 7, 4);
-    scrollLayout->setSpacing(12);
+    scrollLayout->setContentsMargins(0, 0, 6, 3);
+    scrollLayout->setSpacing(9);
     scrollLayout->addWidget(createParentCard(scrollContent));
     scrollLayout->addWidget(createDestinationCard(scrollContent));
 
     auto *childrenHeader = new QHBoxLayout;
-    childrenHeader->setContentsMargins(2, 4, 2, 0);
+    childrenHeader->setContentsMargins(2, 2, 2, 0);
     childrenHeader->addWidget(sectionTitle(QStringLiteral("子仓库"), scrollContent));
     m_childCountLabel = new QLabel(QStringLiteral("0 个"), scrollContent);
     m_childCountLabel->setObjectName(QStringLiteral("childCountLabel"));
@@ -111,7 +105,7 @@ void ClonePage::createUi()
     childrenHeader->addWidget(m_addChildButton);
     scrollLayout->addLayout(childrenHeader);
     m_childCardsLayout = new QVBoxLayout;
-    m_childCardsLayout->setSpacing(10);
+    m_childCardsLayout->setSpacing(8);
     scrollLayout->addLayout(m_childCardsLayout);
     auto *privacy = new QLabel(
         QStringLiteral("配置会保存在当前用户设置中。请勿把 Token 或密码直接写进仓库 URL。"),
@@ -129,18 +123,18 @@ void ClonePage::createUi()
     executionPanel->setObjectName(QStringLiteral("executionPanel"));
     executionPanel->setProperty("role", QStringLiteral("panel"));
     auto *executionLayout = new QVBoxLayout(executionPanel);
-    executionLayout->setContentsMargins(16, 16, 16, 16);
-    executionLayout->setSpacing(12);
+    executionLayout->setContentsMargins(14, 13, 14, 13);
+    executionLayout->setSpacing(10);
     executionLayout->addWidget(sectionTitle(QStringLiteral("执行中心"), executionPanel));
     m_executionSplitter = new QSplitter(Qt::Vertical, executionPanel);
     m_executionSplitter->setObjectName(QStringLiteral("executionSplitter"));
     m_executionSplitter->setChildrenCollapsible(false);
-    m_executionSplitter->setHandleWidth(8);
+    m_executionSplitter->setHandleWidth(7);
     auto *summaryContainer = new QWidget(m_executionSplitter);
     summaryContainer->setObjectName(QStringLiteral("executionSummaryContainer"));
     auto *summaryLayout = new QVBoxLayout(summaryContainer);
     summaryLayout->setContentsMargins(0, 0, 0, 0);
-    summaryLayout->setSpacing(12);
+    summaryLayout->setSpacing(9);
     summaryLayout->addWidget(createPreviewCard(summaryContainer));
     summaryLayout->addWidget(createStatusCard(summaryContainer));
     QFrame *logCard = createLogCard(m_executionSplitter);
@@ -149,7 +143,7 @@ void ClonePage::createUi()
     m_executionSplitter->addWidget(logCard);
     m_executionSplitter->setStretchFactor(0, 0);
     m_executionSplitter->setStretchFactor(1, 1);
-    m_executionSplitter->setSizes({210, 420});
+    m_executionSplitter->setSizes({196, 434});
     executionLayout->addWidget(m_executionSplitter, 1);
     auto *buttonLayout = new QHBoxLayout;
     buttonLayout->addStretch(1);
@@ -170,9 +164,9 @@ QFrame *ClonePage::createParentCard(QWidget *parent)
 {
     QFrame *card = cardFrame(parent, QStringLiteral("parentCard"));
     auto *layout = new QGridLayout(card);
-    layout->setContentsMargins(18, 16, 18, 18);
-    layout->setHorizontalSpacing(12);
-    layout->setVerticalSpacing(7);
+    layout->setContentsMargins(14, 12, 14, 14);
+    layout->setHorizontalSpacing(10);
+    layout->setVerticalSpacing(6);
     layout->addWidget(sectionTitle(QStringLiteral("父项目"), card), 0, 0, 1, 2);
     m_parentRepositoryEdit = new QLineEdit(card);
     m_parentRepositoryEdit->setObjectName(QStringLiteral("parentRepositoryUrlEdit"));
@@ -196,7 +190,7 @@ QFrame *ClonePage::createDestinationCard(QWidget *parent)
 {
     QFrame *card = cardFrame(parent, QStringLiteral("destinationCard"));
     auto *layout = new QGridLayout(card);
-    layout->setContentsMargins(18, 16, 18, 18);
+    layout->setContentsMargins(14, 12, 14, 14);
     layout->setHorizontalSpacing(8);
     layout->setVerticalSpacing(7);
     layout->addWidget(sectionTitle(QStringLiteral("保存位置"), card), 0, 0, 1, 2);
@@ -215,8 +209,8 @@ QFrame *ClonePage::createPreviewCard(QWidget *parent)
 {
     QFrame *card = cardFrame(parent, QStringLiteral("previewCard"));
     auto *layout = new QVBoxLayout(card);
-    layout->setContentsMargins(16, 14, 16, 16);
-    layout->setSpacing(8);
+    layout->setContentsMargins(13, 11, 13, 13);
+    layout->setSpacing(7);
     auto *header = new QHBoxLayout;
     header->addWidget(sectionTitle(QStringLiteral("命令预览"), card));
     header->addStretch(1);
@@ -241,8 +235,8 @@ QFrame *ClonePage::createStatusCard(QWidget *parent)
     m_statusCard->setProperty("role", QStringLiteral("statusCard"));
     m_statusCard->setProperty("statusState", QStringLiteral("normal"));
     auto *layout = new QVBoxLayout(m_statusCard);
-    layout->setContentsMargins(16, 13, 16, 14);
-    layout->setSpacing(7);
+    layout->setContentsMargins(13, 10, 13, 11);
+    layout->setSpacing(6);
     m_validationLabel = new QLabel(m_statusCard);
     m_validationLabel->setObjectName(QStringLiteral("validationSummary"));
     m_validationLabel->setWordWrap(true);
@@ -262,8 +256,8 @@ QFrame *ClonePage::createLogCard(QWidget *parent)
 {
     QFrame *card = cardFrame(parent, QStringLiteral("logCard"));
     auto *layout = new QVBoxLayout(card);
-    layout->setContentsMargins(16, 14, 16, 16);
-    layout->setSpacing(8);
+    layout->setContentsMargins(13, 11, 13, 13);
+    layout->setSpacing(7);
     layout->addWidget(sectionTitle(QStringLiteral("Git 输出"), card));
     m_logEdit = new QPlainTextEdit(card);
     m_logEdit->setObjectName(QStringLiteral("gitOutputEdit"));

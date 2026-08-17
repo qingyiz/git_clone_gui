@@ -70,22 +70,22 @@ void ChildRepositoryCard::setEditable(bool editable)
 void ChildRepositoryCard::createUi(RemoteBranchService *branchService)
 {
     auto *rootLayout = new QVBoxLayout(this);
-    rootLayout->setContentsMargins(18, 16, 18, 18);
-    rootLayout->setSpacing(14);
+    rootLayout->setContentsMargins(14, 12, 14, 14);
+    rootLayout->setSpacing(10);
 
     auto *headerLayout = new QHBoxLayout;
-    headerLayout->setSpacing(10);
+    headerLayout->setSpacing(8);
     m_numberLabel = new QLabel(this);
     m_numberLabel->setObjectName(QStringLiteral("cardNumberBadge"));
     m_numberLabel->setAlignment(Qt::AlignCenter);
-    m_numberLabel->setFixedSize(28, 28);
+    m_numberLabel->setFixedSize(22, 22);
     headerLayout->addWidget(m_numberLabel);
 
     auto *titlesLayout = new QVBoxLayout;
     titlesLayout->setSpacing(1);
     m_titleLabel = new QLabel(this);
     m_titleLabel->setObjectName(QStringLiteral("cardTitle"));
-    auto *subtitle = new QLabel(QStringLiteral("克隆到父项目内部"), this);
+    auto *subtitle = new QLabel(QStringLiteral("父项目内"), this);
     subtitle->setProperty("role", QStringLiteral("muted"));
     titlesLayout->addWidget(m_titleLabel);
     titlesLayout->addWidget(subtitle);
@@ -100,8 +100,8 @@ void ChildRepositoryCard::createUi(RemoteBranchService *branchService)
     rootLayout->addLayout(headerLayout);
 
     auto *fieldsLayout = new QGridLayout;
-    fieldsLayout->setHorizontalSpacing(12);
-    fieldsLayout->setVerticalSpacing(6);
+    fieldsLayout->setHorizontalSpacing(10);
+    fieldsLayout->setVerticalSpacing(5);
     m_repositoryEdit = new QLineEdit(this);
     m_repositoryEdit->setObjectName(QStringLiteral("childRepositoryUrlEdit"));
     m_repositoryEdit->setPlaceholderText(QStringLiteral("git@github.com:team/repository.git"));

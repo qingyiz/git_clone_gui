@@ -8,24 +8,25 @@
 >
 > 状态：已更新
 >
-> 最近更新：2026-08-15
+> 最近更新：2026-08-17
 
 ## 设计摘要
 
 - 目标：在保留既有克隆与交付能力的基础上，增加左侧导航和独立仓库工作区页面，递归发现嵌套 Git 工作树并安全查看/切换分支。
-- 覆盖行为：REQ-001～REQ-013，当前增量聚焦 AC-013.19～AC-013.20 与 NFR-017。
-- 核心方案：保持 `BranchCatalog` 与 Git refs 读取契约不变；`WorkspacePage` 只保留两个可操作页签并共享搜索框，presentation 内独立 `BranchNameMatcher` 先做包含匹配，再以有界 Damerau-Levenshtein 连续区域距离容忍少量错字。
+- 覆盖行为：REQ-001～REQ-013，当前增量聚焦 REQ-011 / AC-011.11，并交付已验收的 REQ-006 / AC-006.1～AC-006.8。
+- 核心方案：沿用版本单一来源、PR 合并后打不可移动标签、双平台原生构建和标签自动 Release 流程；本轮只增加 `v0.1.6` 版本与说明，不改 CI、签名、部署或业务架构。
 - 模块/构建边界：ARCH-001～ARCH-013 / BUILD-001～BUILD-011；不新增 target，只在既有 application/infrastructure/presentation target 内增加源码和符合现有方向的依赖。
 
 ## 代码库调查
 
 | 证据类型 | 证据 | 已验证事实 | 对设计的影响 |
 |---|---|---|---|
-| 当前结构 | `inspect_structure.py` | 实施后 58 个源文件；MainWindow 173 行，ClonePage 370 行，WorkspacePage 416 行，BranchNameMatcher.cpp 75 行，RepositoryTree 272 行；五层 target 保持 | 模糊算法已从接近预算的页面提取；WorkspacePage 仍低于约 420 行且无新 target、跨层依赖或 I/O 职责 |
+| 当前结构 | `inspect_structure.py` | TASK-040 实施后为 60 个源文件；NavigationBrandMark 52 行，MainWindow 219 行，ClonePage 370 行，WorkspacePage 416 行，AppStyle 427 行，RepositoryTree 272 行；五层 target 保持 | 品牌图标绘制提取为小型 presentation 组件，MainWindow 仍低于约 220 行预算；只向既有 target 增加源码，无新 target、跨层依赖或 I/O 职责 |
 | 当前分支详情 | `WorkspacePage.*`、`TestWorkspacePresentation.cpp` | UI 已只保留本地/远端待跟踪两个列表并共享搜索框；`applyBranchFilter()` 仅使用大小写不敏感 `contains`，错输字符后零结果 | 保持页面列表状态和底层 remote refs 契约；将匹配算法提取为 presentation 纯 helper，页面只消费 bool 结果 |
 | 当前 core | `CloneRequest.h/.cpp` | 已使用 `QList<ChildRepositoryRequest/Plan>`；父/子 clone 均未传 `--progress` | 命令计划增加显式进度参数，保持结构化执行与顺序不变 |
 | 当前 application | `CloneController.cpp` | 已用 currentChildIndex 串行推进 0～N 子队列，所有结果汇入 `finish()` | 在有效任务开始时启动单调计时，在统一 finish 路径追加一次总耗时 |
-| 当前 presentation | snapshot、`MainWindow*.cpp` | 双栏卡片界面与集中 QSS 已完成 | 图标沿用其蓝色 “G” 视觉语言 |
+| 当前 presentation | 用户截图、`MainWindow.cpp`、`AppStyle.cpp` | TASK-039 已收紧整体视觉，但品牌位仍是 26px 高饱和蓝底 `QLabel("G")`，没有 Git/仓库语义 | 用 Qt painter 绘制分支节点，避免字体、emoji、平台 theme icon 和小位图缩放差异 |
+| 2026-08-17 视觉基线 | `before-clone.png`、`before-workspace.png`、`AppStyle.cpp`、`MainWindow.cpp`、`ClonePageUi.cpp`、`WorkspacePageUi.cpp` | 188px 深色侧栏 + 整行高饱和蓝选中、16px 外层 panel + 12px 内卡、蓝色胶囊计数/分支与大字阶同时出现；`RepositoryTree`/`BranchSelector` 仍硬编码旧蓝色系 | 根因在表示层 token 和容器层级，无需重构功能；QSS 与两个自绘控件必须同步换色，避免局部漂移 |
 | 当前 infrastructure | `GitProcessRunner`、`QSettingsConfigurationStore` | `QProcess::MergedChannels` + `readyRead` 已按到达异步转发；问题不在读取链路 | 本轮不修改 runner，避免无依据重构 |
 | Git clone 进度 | Git 2.44.0 行为与 `git clone -h` | stderr 非终端时默认可能抑制传输进度，`--progress` 可强制输出 | 父/子计划统一显式传参，由现有 merged-channel readyRead 实时显示 |
 | 工具链 | CMake cache/既有回归 | Qt 5.15.2、macOS arm64 可构建 | 使用 Qt 5.15/6 公共 API |
@@ -88,6 +89,8 @@
 | S：单 worker 低开销迭代 | AC-013.18 | 保持顺序和取消模型，消除 canonical 与 QFileInfoList 开销 | 仍受磁盘目录数下限约束 | 采用 |
 | T：子序列模糊匹配 | AC-013.20 | 算法简单、漏字可命中 | 替换或多输错误字符无法稳定命中，且长名称弱相关结果多 | 否决 |
 | U：有界 Damerau-Levenshtein 连续区域匹配 | AC-013.20、NFR-017 | 覆盖插入/删除/替换/相邻颠倒，阈值可测，完整分支名中间片段也可命中 | 每项需要 O(关键词长度 × 分支名长度) 计算 | 采用 |
+| V：保留当前信息架构，在 Widgets/QSS/自绘控件内重建低饱和桌面 token | REQ-006、NFR-018 | 改动可控，两页功能和自动化对象名不变，Qt 5/6 兼容 | 需要 QSS 与硬编码 painter 色值同步审查 | 采用 |
+| W：引入第三方主题库或迁移 QML | REQ-006 | 可快速获得成套组件皮肤 | 新增依赖与部署闭包，需改写大量已验证 Widgets 和测试 | 否决 |
 
 ### DEC-001：以结构化 QProcess 参数执行 Git
 
@@ -329,6 +332,30 @@
 - 代价：线上交付证据必须在标签 workflow 完成后追加记录，因此功能发布提交与证据记录提交分离。
 - 被否决方案：复用或移动 `v0.1.4`（破坏既有发布）；只创建手工 Release（绕过双平台构建门槛）；在合并前给功能分支打标签（不满足 main 可追溯性）。
 
+### DEC-031：以低饱和、小圆角和紧凑分隔重建桌面视觉层级
+
+- 上下文与需求：REQ-006 / AC-006.1～AC-006.7，NFR-018；FACT-036。
+- 决策：保留现有 QWidget 树和功能分区，将页面背景收敛为中性浅灰，外层 panel 改为低对比边界面，内容容器使用 6～8px 圆角和紧凑 4/8/12/16 间距。侧栏改为狭幅中性浅色，当前页仅用窄指示条 + 浅底 + 深色文字表达。蓝色只保留主按钮、focus、链接与选中标识；数量/版本等次要信息改为普通文本或低对比 badge。`RepositoryTree` 与 `BranchSelector` 自绘色值与 QSS 使用同一系中性/蓝色语义。
+- 理由：用户反馈指向整体视觉语言，而非单个控件缺陷；在 presentation 内统一 token 能直接消除模板化卡片与色块，同时保持已验证业务与跨平台交付边界。
+- 代价：仍需 Qt 5/macOS 截图人工检查；QSS 无设计 token 语法，需通过集中色值与回归测试防止漂移。
+- 被否决方案：只改主色（不能解决卡片嵌套和信息密度）；模糊/玻璃/渐变效果（进一步增强生成式模板观感）；重写 QML 或引入主题库（超出范围）。
+
+### DEC-032：品牌位使用独立矢量自绘的 Git 分支节点
+
+- 上下文与需求：REQ-006 / AC-006.8，NFR-018；FACT-037、ANA-032。
+- 决策：在 presentation 内新增无 I/O 的 `NavigationBrandMark`，使用 `QPainter` 在 28px 逻辑尺寸中绘制低饱和浅底、中性边框、蓝灰分支线和三个节点。组件公开稳定的 `navigationMark` 对象名、`gitBranch` 语义属性与无障碍名称；MainWindow 只负责组合。
+- 理由：自绘路径在 Qt 5/6 与 Retina/高 DPI 下按逻辑坐标缩放，形状和色彩跨平台一致；独立组件同时避免 MainWindow 继续增长及字母占位造成的临时模板感。
+- 代价：需要像素级回归和截图人工检查来约束小尺寸对比度；颜色常量须服从 ARCH-006 的 neutral/accent 语义。
+- 被否决方案：继续使用 `QLabel("G")`（无 Git 语义）；emoji 或平台 theme icon（字形/资源跨平台不稳定）；复用 Bundle `.icns` 或增加位图资源（小尺寸细节和缩放不可控，且与本任务的侧栏标识职责不同）。
+
+### DEC-033：界面优化以 `v0.1.6` 补丁版本交付
+
+- 上下文与需求：REQ-011 / AC-011.11；FACT-038、ANA-033。
+- 决策：沿用 DEC-027 的 `${PROJECT_VERSION}` 单一来源和现有 `.github/workflows/release.yml`，把项目版本提升为 `0.1.6` 并新增 `docs/releases/v0.1.6.md`。全部表示层改动与版本说明经 PR 合并 `main` 后，在合并提交创建 `v0.1.6` 注释标签；等待 macOS arm64、Windows x64 和 Publish GitHub Release 三个标签 job 成功，再核对正文、附件大小与 SHA-256 并回写 Spec。
+- 理由：补丁版本适合向后兼容的视觉与品牌修正；沿用已在 `v0.1.5` 验证的流水线可保持源码、运行时版本、双平台包和 Release 页面一致。
+- 代价：线上 run、Release 与附件证据只能在标签推送后获得，因此需要发布提交和证据回写提交两个可追溯步骤。
+- 被否决方案：移动/复用 `v0.1.5`（破坏历史可追溯性）；直接在功能分支打标签（标签不位于 `main` 合并历史）；手工创建 Release 或上传本地包（绕过两个目标平台的原生验证）。
+
 ## 总体架构
 
 ```mermaid
@@ -388,6 +415,7 @@ flowchart LR
 | `WorkingTreeStatus` | 已暂存、未暂存、未跟踪、冲突数量及 dirty 派生 | porcelain records → typed counts | REQ-013 / AC-013.14～17 |
 | `NavigationConfigurationStore` | 当前导航页持久化契约 | optional NavigationPage / save result | REQ-012 / AC-012.5 |
 | `QSettingsNavigationConfigurationStore` | navigation namespace、schema、sync/status | QSettings ↔ page enum | REQ-012 / AC-012.5 |
+| `NavigationBrandMark` | 绘制侧栏 Git 分支节点品牌标识，不拥有导航状态或 I/O | widget paint/size → 稳定语义图形 | REQ-006 / AC-006.8 |
 
 ## 模块与依赖边界
 
@@ -431,6 +459,9 @@ flowchart LR
 - QSS 由 presentation 内的 `AppStyle::applicationStyleSheet()` 单点提供；对象名/动态属性区分 card、primary、secondary、danger、muted。
 - 不在业务槽函数散落颜色/字体设置。
 - 默认/最小尺寸和 splitter stretch 是页面契约。
+- 页面主 token 使用中性色、4/8/12/16 间距、6～8px 容器圆角；不新增渐变、毛玻璃、大面积彩色面板或无语义胶囊。
+- `RepositoryTree`/`BranchSelector` 只在自绘图形必需处保留颜色常量，其语义必须与 `AppStyle` 的 neutral/accent/success/warning/error 一致。
+- `NavigationBrandMark` 只负责矢量绘制、尺寸和可访问语义，不读取导航状态、service/store 或应用资源；浅底/边框/分支线必须分别服从 neutral surface/border 与 muted accent。
 
 ### ARCH-007：远程分支查询通过独立 port/adapter 隔离
 
@@ -587,6 +618,8 @@ flowchart LR
 | MainWindow | 增量前 372 行并拥有完整克隆页 | 壳包含任一页面字段、用例或 I/O，或实现超过约 220 行 | 页面职责留在 `ClonePage`/`WorkspacePage`，壳只导航和关闭 | inspect_structure + 职责审查 |
 | ClonePage | 从既有 MainWindow 机械迁移 | 新增工作区/导航职责，或单实现文件超过约 420 行 | 保持既有 Ui 分文件并提取独立 widget | inspect_structure + 旧测试回归 |
 | WorkspacePage | 新页面 | 解析 Git 输出、遍历目录、或单实现文件超过约 420 行 | I/O 留在 adapter；视图子区域再拆 widget/model | include/API 审查 |
+| AppStyle | 增量前 411 行，TASK-039 实施后 434 行集中 QSS | 超过约 480 行或同类颜色在多个控件无规则漂移 | 按导航/表单/列表/状态拆分私有 QSS 片段，不将业务状态放入样式类 | 结构行数 + 选择器/属性审查 |
+| NavigationBrandMark | 新小型自绘组件 | 拥有导航状态/I/O、依赖 application/infrastructure，或实现超过约 100 行 | 保持组件仅做 paint/size/accessibility，复杂图标抽出 presentation 私有 helper | include/API + 像素测试 |
 | BranchNameMatcher | 新纯匹配 helper | 访问 QWidget/WorkspaceService、拥有列表状态，或引入第三方依赖 | UI 状态留在 WorkspacePage；算法保持 QString 输入与 bool 输出 | 表驱动算法测试 + include 审查 |
 | RepositoryTree | 新视觉组件 | 访问 WorkspaceService、构建仓库层级或超过约 320 行 | 数据构建留在 WorkspacePage；图形 helper 保持组件私有 | include/API + paint 测试 |
 | GitWorkspaceService | 新适配器 | 同时拥有 UI、持久化，或单文件超过约 420 行 | 扫描 helper 与 Git parser 可拆为 infrastructure 私有实现 | include/API/结构审查 |
@@ -802,7 +835,7 @@ parseWorkingTreeStatus(lines):
 - 安全/隐私：不使用 shell；QSettings 只含表单；不保存日志/任务状态；UI/README 提醒 URL Token 风险。
 - 响应性：Git 异步；设置保存 debounce；左栏 scroll；日志 10,000 block。
 - 可观测性：状态显示子项 i/N；预览展示所有命令；错误摘要压缩。
-- 视觉：#F5F7FB 背景、#FFFFFF 卡片、#2563EB 主色、#DC2626 危险色、12px 圆角、清晰焦点环；字体使用系统默认，命令/日志用等宽字体。
+- 视觉：页面为低饱和中性浅灰，内容面为近白色，边界以浅中性分隔线为主；容器圆角 6～8px，主蓝色仅用于主操作/focus/选中指示，危险/成功/警告仅用于对应语义；字体使用系统默认，命令/日志用等宽字体。
 - 兼容性：不依赖 macOS 私有 API；QSettings 使用 NativeFormat，测试使用 IniFormat 临时文件。
 - 远程查询：450ms debounce、15 秒超时、`GIT_TERMINAL_PROMPT=0`、每 URL 会话缓存；只传结构化参数，不记录 URL/refs 到日志。
 - 结果/日志：任务结束后的状态卡优先保持到下一次配置编辑；纵向 splitter 默认分配日志不少于 280px，用户可拖动。
@@ -973,7 +1006,7 @@ parseWorkingTreeStatus(lines):
 
 ### PROP-027：版本与发布说明保持一致
 
-- 来源：REQ-011 / AC-011.8～AC-011.9。
+- 来源：REQ-011 / AC-011.8～AC-011.11。
 - 属性：配置为 `PROJECT_VERSION=X` 时，运行时 applicationVersion、macOS Bundle short/build version 和侧栏文本均为 X；标签 `vX` 若存在同名说明文件则 Release 正文等于该文件，否则使用自动说明。
 - 验证：CMake cache/编译定义、presentation 标签、`Info.plist` 和 GitHub Release API 检查。
 
@@ -989,6 +1022,18 @@ parseWorkingTreeStatus(lines):
 - 属性：任意 branch/query 先遵守 trim 后大小写不敏感包含匹配；query 长度 1～2 时非包含项恒不匹配。长度 3～4/5～8/9+ 的 query 仅当其与 branch 任一连续区域的 Damerau-Levenshtein 最小距离分别不超过 1/2/3 时匹配；超出阈值恒不匹配。匹配不改变原始分支名/角色、不访问 WorkspaceService，两个 1,000 项列表的模糊更新仍在 250ms 内完成。
 - 验证：BranchNameMatcher 表驱动测试覆盖大小写/trim、前中后片段、插入、删除、替换、相邻颠倒、各长度阈值内外；WorkspacePage 2,000 项错字筛选、切换 target 与 fake service 零调用测试。
 
+### PROP-030：默认双页视觉遵守桌面工具的节制层级
+
+- 来源：REQ-006 / AC-006.1～AC-006.7，NFR-018。
+- 属性：导航侧栏宽度小于旧 188px 基线，checked 导航不使用高饱和蓝色整行背景，版本标签无独立卡片边框。普通 panel/card 圆角不超过 8px，标题字阶不高于 20px；蓝色大面积填充只出现在主操作按钮，两页输入、状态、列表和自绘控件使用一致的中性/accent/语义色。视觉修改不改变对象名、页面实例、controller/service/store 调用和 Git 操作。
+- 验证：MainWindow 尺寸/导航属性测试，现有 presentation/workspace 全回归，克隆页与工作区页 before/after snapshot 人工对比，QSS 与 painter 色值审查。
+
+### PROP-031：侧栏品牌标识始终表达 Git 分支语义
+
+- 来源：REQ-006 / AC-006.8，NFR-018。
+- 属性：默认 MainWindow 中 `navigationMark` 必须存在且不是文本 `QLabel`，其语义属性恒为 `gitBranch`；渲染结果包含低饱和浅色圆角底、中性边框以及由连续蓝灰线段和三个节点组成的可辨识分支图形。DPR 变化只缩放像素密度，不改变 28px 逻辑尺寸、节点数量、语义属性或颜色角色；组件不访问 navigation/service/store/I/O。
+- 验证：presentation 对象类型/尺寸/语义属性/无障碍名称断言，widget grab 的背景与分支色像素分布断言，Qt 5/macOS Retina snapshot 人工检查，完整 Debug/Release 回归。
+
 ## 测试策略
 
 | 行为/属性 | 层级 | 场景 | 证据 |
@@ -996,7 +1041,7 @@ parseWorkingTreeStatus(lines):
 | REQ-001 / PROP-001,003 | core | 0/1/N、重复/逃逸、元字符、预览顺序 | `test_clone_core` |
 | REQ-002,003 / PROP-002,004,016 | core/application | 父/子显式 progress、0/多项成功、中间失败、取消、互斥、完成前输出转发、三种结果总耗时 | `test_clone_core` + `test_clone_controller` |
 | REQ-007 / PROP-005 | infrastructure | no config、0/N、特殊字符、覆盖 | `test_configuration_store` |
-| REQ-005,006 / PROP-006 | presentation | add/remove/renumber、restore、尺寸、摘要、snapshot | `test_presentation` + 视觉检查 |
+| REQ-005,006 / PROP-006,030～031 | presentation | add/remove/renumber、restore、尺寸、摘要、中性导航与紧凑层级、Git 分支品牌标识语义/像素、克隆/工作区 snapshot | `test_presentation` + `test_workspace_presentation` + 视觉检查 |
 | REQ-002,004 | integration/delivery | 父+2 子真实 clone、preset、bundle、launch | CTest + delivery script |
 | REQ-008 / PROP-007 | app/delivery | plist/icon、Framework/plugin、无开发 Qt 绝对依赖、安装幂等、launch | `plutil` + `find` + `otool` + self-contained delivery |
 | REQ-008 / PROP-008 | app/resource | RGBA、四角透明、Bundle icns 反解 | alpha 像素断言 + Dock/Finder 检查 |
@@ -1016,12 +1061,12 @@ parseWorkingTreeStatus(lines):
 | REQ-003 | CloneRequest/Controller/Runner/MainWindow | ARCH-002, ARCH-003, ARCH-004 | DEC-001,002,004,016 | PROP-004,016 | core/controller/UI |
 | REQ-004 | CMake/app/README | BUILD-001～004 | DEC-003 | 不适用 | build/delivery |
 | REQ-005 | ChildRepositoryCard/MainWindow | ARCH-004, ARCH-006 | DEC-005,007 | PROP-006 | presentation |
-| REQ-006 | MainWindow/QSS | ARCH-004, ARCH-006 | DEC-007 | PROP-006 | snapshot/人工 |
+| REQ-006 | MainWindow/ClonePage/WorkspacePage/AppStyle/RepositoryTree/BranchSelector/NavigationBrandMark | ARCH-004, ARCH-006, ARCH-010 | DEC-007,031,032 | PROP-006,030,031 | presentation 回归 + 品牌标识语义/像素 + 双页 snapshot/人工 |
 | REQ-007 | ConfigurationStore/QSettings | ARCH-005 | DEC-006 | PROP-005 | store/UI |
 | REQ-008 | app CMake/resources/install script | BUILD-003, BUILD-005 | DEC-008,009 | PROP-007,008 | icon alpha/bundle/self-contained delivery/launch |
 | REQ-009 | RemoteBranchService/GitRemoteBranchService/BranchSelector | ARCH-007, BUILD-006 | DEC-010,011 | PROP-009,012 | infrastructure/presentation/snapshot |
 | REQ-010 | CloneRequest/MainWindow/MainWindowUi/DesktopNotifier | ARCH-002, ARCH-004, ARCH-006, ARCH-008 | DEC-012,013 | PROP-010,011,013 | core/presentation/snapshot/notification signal |
-| REQ-011 | app CMake/Deploy scripts/release workflow | ARCH-009, BUILD-003, BUILD-005, BUILD-008 | DEC-014,027 | PROP-014,015,027 | version/UI/Windows/macOS Actions delivery/signature/release notes |
+| REQ-011 | app CMake/Deploy scripts/release workflow | ARCH-009, BUILD-003, BUILD-005, BUILD-008 | DEC-014,027,030,033 | PROP-014,015,027 | version/UI/Windows/macOS Actions delivery/signature/release notes/assets checksum |
 | REQ-012 | MainWindow/ClonePage/WorkspacePage/NavigationConfigurationStore | ARCH-004, ARCH-010, ARCH-013 | DEC-017,024 | PROP-020,024 | store/navigation/UI/snapshot |
 | REQ-013 | WorkspaceService/WorkspaceConfigurationStore/GitWorkspaceService/QSettingsWorkspaceConfigurationStore/WorkspacePage/BranchNameMatcher/RepositoryTree | ARCH-010～013, BUILD-009～011 | DEC-018～023,025～026,028～029 | PROP-017～019,021～023,025～026,028～029 | store/performance/infrastructure/integration/UI/snapshot |
 

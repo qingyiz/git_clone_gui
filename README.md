@@ -28,7 +28,7 @@
 
 长期版本从 [GitHub Releases](https://github.com/qingyiz/git_clone_gui/releases) 下载：
 
-当前版本：`0.1.5`。应用左侧底部、macOS Bundle 元数据与 GitHub 标签使用同一版本号。
+当前版本：`0.1.6`。应用左侧底部、macOS Bundle 元数据与 GitHub 标签使用同一版本号。
 
 - `GitCloneGui-macOS-arm64.dmg`：Apple Silicon Mac（M1/M2/M3/M4 等）；
 - `GitCloneGui-Windows-x64.zip`：64 位 Windows 10/11 便携包，解压后运行 `GitCloneGui.exe`。
@@ -111,8 +111,8 @@ cmake --install build/windows --config Release --prefix build/install-windows
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v0.1.5 -m "GitCloneGui v0.1.5"
-git push origin v0.1.5
+git tag -a v0.1.6 -m "GitCloneGui v0.1.6"
+git push origin v0.1.6
 ```
 
 标签推送后到仓库的 Actions 页面观察两个平台 job；全部成功后，Release 页面会自动出现附件。不要在构建失败时手工上传裸 `.exe` 或 build-tree `.app`，它们没有完整运行时。

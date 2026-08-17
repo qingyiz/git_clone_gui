@@ -227,8 +227,11 @@ void TestWorkspacePresentation::repositoryTreeUsesSemanticIconsAndUnifiedRows()
     const QImage image = tree->viewport()->grab().toImage();
     const QRect row = tree->visualItemRect(api);
     QVERIFY(!image.isNull());
-    const QColor left = image.pixelColor(8, row.center().y());
-    const QColor middle = image.pixelColor(row.center().x(), row.center().y());
+    const qreal deviceScale = image.devicePixelRatio();
+    const QColor left = image.pixelColor(qRound(8 * deviceScale),
+                                         qRound(row.center().y() * deviceScale));
+    const QColor middle = image.pixelColor(qRound(row.center().x() * deviceScale),
+                                           qRound(row.center().y() * deviceScale));
     QVERIFY(left.blue() > left.red());
     QVERIFY(middle.blue() > middle.red());
     QVERIFY(qAbs(left.red() - middle.red()) < 20);

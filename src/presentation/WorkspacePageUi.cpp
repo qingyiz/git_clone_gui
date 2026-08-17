@@ -73,16 +73,16 @@ void WorkspacePage::createUi()
 {
     setObjectName(QStringLiteral("workspacePage"));
     auto *rootLayout = new QVBoxLayout(this);
-    rootLayout->setContentsMargins(24, 20, 24, 22);
-    rootLayout->setSpacing(16);
+    rootLayout->setContentsMargins(20, 16, 20, 18);
+    rootLayout->setSpacing(12);
 
     auto *header = new QHBoxLayout;
     auto *headerText = new QVBoxLayout;
-    headerText->setSpacing(2);
+    headerText->setSpacing(1);
     auto *title = new QLabel(QStringLiteral("仓库工作区"), this);
     title->setObjectName(QStringLiteral("appTitle"));
     auto *subtitle = new QLabel(
-        QStringLiteral("递归发现本地项目，集中查看并快速切换分支"), this);
+        QStringLiteral("扫描本地项目并统一管理分支"), this);
     subtitle->setProperty("role", QStringLiteral("muted"));
     headerText->addWidget(title);
     headerText->addWidget(subtitle);
@@ -92,8 +92,8 @@ void WorkspacePage::createUi()
 
     QFrame *rootCard = card(this);
     auto *rootCardLayout = new QVBoxLayout(rootCard);
-    rootCardLayout->setContentsMargins(18, 15, 18, 17);
-    rootCardLayout->setSpacing(9);
+    rootCardLayout->setContentsMargins(14, 12, 14, 13);
+    rootCardLayout->setSpacing(7);
     rootCardLayout->addWidget(sectionTitle(QStringLiteral("工作目录"), rootCard));
     auto *rootInput = new QHBoxLayout;
     m_rootEdit = new QLineEdit(rootCard);
@@ -115,10 +115,10 @@ void WorkspacePage::createUi()
     rootLayout->addWidget(rootCard);
 
     auto *content = new QHBoxLayout;
-    content->setSpacing(16);
+    content->setSpacing(12);
     QFrame *treeCard = card(this);
     auto *treeLayout = new QVBoxLayout(treeCard);
-    treeLayout->setContentsMargins(16, 14, 16, 16);
+    treeLayout->setContentsMargins(13, 11, 13, 13);
     auto *treeHeader = new QHBoxLayout;
     treeHeader->addWidget(sectionTitle(QStringLiteral("仓库树"), treeCard));
     treeHeader->addStretch(1);
@@ -133,8 +133,8 @@ void WorkspacePage::createUi()
 
     QFrame *branchCard = card(this);
     auto *branchLayout = new QVBoxLayout(branchCard);
-    branchLayout->setContentsMargins(16, 14, 16, 16);
-    branchLayout->setSpacing(10);
+    branchLayout->setContentsMargins(13, 11, 13, 13);
+    branchLayout->setSpacing(8);
     auto *branchHeader = new QHBoxLayout;
     branchHeader->addWidget(sectionTitle(QStringLiteral("分支详情"), branchCard));
     branchHeader->addStretch(1);
@@ -150,13 +150,16 @@ void WorkspacePage::createUi()
     m_currentBranchLabel = new QLabel(branchCard);
     m_currentBranchLabel->setObjectName(QStringLiteral("workspaceCurrentBranch"));
     m_currentBranchLabel->setProperty("role", QStringLiteral("branchBadge"));
-    branchLayout->addWidget(m_currentBranchLabel);
+    auto *currentBranchRow = new QHBoxLayout;
+    currentBranchRow->addWidget(m_currentBranchLabel);
+    currentBranchRow->addStretch(1);
+    branchLayout->addLayout(currentBranchRow);
 
     m_worktreeStatusCard = new QFrame(branchCard);
     m_worktreeStatusCard->setObjectName(QStringLiteral("workspaceWorktreeStatusCard"));
     m_worktreeStatusCard->setProperty("worktreeState", QStringLiteral("neutral"));
     auto *worktreeStatusLayout = new QVBoxLayout(m_worktreeStatusCard);
-    worktreeStatusLayout->setContentsMargins(13, 10, 13, 10);
+    worktreeStatusLayout->setContentsMargins(11, 8, 11, 8);
     worktreeStatusLayout->setSpacing(3);
     m_worktreeStatusTitle = new QLabel(m_worktreeStatusCard);
     m_worktreeStatusTitle->setObjectName(QStringLiteral("workspaceWorktreeStatusTitle"));

@@ -14,6 +14,8 @@ add_library(git_clone_presentation STATIC
     DesktopNotifier.h
     MainWindow.cpp
     MainWindow.h
+    NavigationBrandMark.cpp
+    NavigationBrandMark.h
     NotificationSeverity.h
     RepositoryTree.cpp
     RepositoryTree.h
