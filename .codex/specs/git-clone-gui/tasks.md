@@ -615,7 +615,7 @@
   - 验证：品牌对象类型、逻辑尺寸、语义属性、无障碍名称与渲染像素断言；Qt 5/macOS Retina snapshot；Debug/Release 全 CTest；`git diff --check`、结构/依赖审查和 `.app` 启动冒烟。
   - 实施记录：新增 52 行 `NavigationBrandMark` 自绘组件，在 28px 逻辑尺寸内使用 `#E8EDF3` 浅底、`#C8D0DA` 边框与 `#4A668E` 分支线绘制连续路径和三个节点；组件提供 `gitBranch` 语义属性与“Git 分支”无障碍名称。MainWindow 删除 `QLabel("G")` 及固定尺寸组装，AppStyle 删除高饱和 `navigationMark` QSS，既有对象名保持。测试新增非 QLabel、28px、语义/无障碍与 Retina 渲染像素分布断言；`after-brand-icon.png` 人工检查确认小尺寸分支关系清晰、与中性侧栏一致。Qt 5.15.2 Debug/Release 全量 CTest 均 11/11 通过；Release `.app` 启动后保持运行并可正常 TERM 退出。`git diff --check`、presentation 跨层 include 扫描通过；结构为 60 个源文件，NavigationBrandMark 52 行、MainWindow 219 行、AppStyle 427 行，均在预算内，无新 target/link/Qt component/第三方依赖。
 
-- [ ] TASK-041：发布界面优化版本 `v0.1.6`
+- [x] TASK-041：发布界面优化版本 `v0.1.6`
   - 类型：required
   - 需求：REQ-011 / AC-011.11
   - 设计：DEC-027、DEC-033；ARCH-009；BUILD-003、BUILD-005、BUILD-008；PROP-027
@@ -628,7 +628,7 @@
   - 修改范围：根 CMake、README、版本 UI 测试、`docs/releases/v0.1.6.md` 与 Spec；外部操作为分支提交、PR 合并、`main` 注释标签推送、Actions 与 Release 验证及证据回写。
   - 产出：项目/运行时/Bundle/侧栏版本 0.1.6，中文更新说明，main 合并提交、不可移动标签和带两个平台附件的最新公开 Release。
   - 验证：Debug/Release 全 CTest、版本字符串与 Info.plist、自包含 macOS 安装 Bundle、diff/Spec 检查、PR/main/tag 关系、GitHub Actions 三个标签 job、Release 正文/附件/API 与 SHA-256。
-  - 实施记录：待实施。
+  - 实施记录：根 `PROJECT_VERSION`、运行时侧栏、Debug/Release Bundle short/build version 与 README 均提升为 0.1.6，并新增 `docs/releases/v0.1.6.md`，说明低饱和紧凑视觉、Git 分支品牌图标、功能保持、双平台附件与签名提示。本机 Qt 5.15.2 Debug/Release 全量 CTest 均 11/11 通过；Release 自包含安装 Bundle 通过依赖闭包/Qt Cocoa plugin/资源检查并完成启动冒烟，Spec 与 diff check 通过。功能提交 `52cbaa2` 经 PR #10 的 run `32042299506` 验证：macOS arm64 首次成功，Windows 首次在下载固定 `install-qt-action` 时遭 GitHub codeload 429，未进入构建；仅重跑失败 job 后 Windows x64 完成 Qt 6.8 Release 构建、11/11 CTest、部署、ZIP 校验与上传，PR 合并为 `main` 提交 `be2aba2`。`v0.1.6` 注释标签指向同一合并提交；标签 run `32042840079` 的 macOS arm64、Windows x64 与 Publish GitHub Release 三个 job 全部成功。公开 Release `v0.1.6` 为最新正式版本，正文与说明文件一致；DMG 24,307,556 bytes、SHA-256 `41aa1f7e6aa96f39e4411d9b74d3d4ea590071408201a09b8500346e0ffcd20f`，Windows ZIP 22,791,713 bytes、SHA-256 `aec19634d87795816d4abf7396fd383adbfa2079ff90589cec4c6c719fab0866`，两附件状态均为 `uploaded`。
 
 ## 执行波次
 
@@ -688,7 +688,7 @@
 | REQ-008 | TASK-012, TASK-013, TASK-014 | plist/icon alpha + self-contained delivery + launch | 已完成 |
 | REQ-009 | TASK-015, TASK-016, TASK-018 | branch service + selector/presentation tests + snapshot | 已完成 |
 | REQ-010 | TASK-017, TASK-019 | core + presentation + snapshot/notification/delivery | 已完成 |
-| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035, TASK-038, TASK-041 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件校验值、ad-hoc Bundle 严格验证 | 实施中 |
+| REQ-011 | TASK-020, TASK-021, TASK-022, TASK-023, TASK-035, TASK-038, TASK-041 | 版本一致性、Windows/macOS Actions build/test/deploy、签名门控、artifact/Release 正文与附件校验值、ad-hoc Bundle 严格验证 | 已完成 |
 | REQ-012 | TASK-027, TASK-028, TASK-032 | navigation store/presentation、snapshot、运行中切页/关闭 | 已完成 |
 | REQ-013 | TASK-025, TASK-026, TASK-028～TASK-031, TASK-033～TASK-034, TASK-036～TASK-037 | contract、扫描/Git 集成与性能、工作目录存储/自动扫描、工作树风险、容错分支搜索、页面 fake service、自绘树与全量交付回归 | 已完成 |
 
@@ -725,4 +725,4 @@
 - [x] TASK-038 完成，AC-011.10 / PROP-027 有 0.1.5 版本、main、标签、Actions 与 Release API 证据。
 - [x] TASK-039 完成，AC-006.1～AC-006.7 / PROP-030 / NFR-018 有尺寸、属性、双页回归和 before/after snapshot 证据。
 - [x] TASK-040 完成，AC-006.8 / PROP-031 / NFR-018 有对象语义、像素、snapshot、全量回归与启动证据。
-- [ ] TASK-041 完成，AC-011.11 / PROP-027 有 0.1.6 版本、main、标签、Actions、Release 正文、双平台附件与校验值证据。
+- [x] TASK-041 完成，AC-011.11 / PROP-027 有 0.1.6 版本、main、标签、Actions、Release 正文、双平台附件与校验值证据。
