@@ -8,30 +8,30 @@
 namespace gitclone {
 namespace {
 
-constexpr int RowHeight = 40;
+constexpr int RowHeight = 38;
 constexpr int RowHorizontalInset = 5;
 constexpr int BaseIndent = 10;
 constexpr int LevelIndent = 22;
 constexpr int ChevronWidth = 18;
-constexpr int IconSize = 22;
-constexpr int IconTextGap = 9;
+constexpr int IconSize = 20;
+constexpr int IconTextGap = 8;
 
 QColor textColor(bool selected, bool muted = false)
 {
     if (selected) {
-        return muted ? QColor(QStringLiteral("#5B7FC7"))
-                     : QColor(QStringLiteral("#174EA6"));
+        return muted ? QColor(QStringLiteral("#69717C"))
+                     : QColor(QStringLiteral("#20242A"));
     }
-    return muted ? QColor(QStringLiteral("#718096"))
-                 : QColor(QStringLiteral("#172033"));
+    return muted ? QColor(QStringLiteral("#767D87"))
+                 : QColor(QStringLiteral("#292D33"));
 }
 
 void drawChevron(QPainter &painter, const QRect &rect, bool expanded, bool selected)
 {
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(QPen(selected ? QColor(QStringLiteral("#3D6FC4"))
-                                 : QColor(QStringLiteral("#8B98AA")),
+    painter.setPen(QPen(selected ? QColor(QStringLiteral("#376CC4"))
+                                 : QColor(QStringLiteral("#8E959F")),
                         1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     QPainterPath path;
     if (expanded) {
@@ -52,12 +52,12 @@ void drawFolderIcon(QPainter &painter, const QRect &rect, bool root, bool select
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
     const QColor fill = selected
-        ? QColor(QStringLiteral("#D6E7FF"))
-        : (root ? QColor(QStringLiteral("#E1EAFE"))
-                : QColor(QStringLiteral("#E9EEF6")));
+        ? QColor(QStringLiteral("#E2E9F5"))
+        : (root ? QColor(QStringLiteral("#E7EBF1"))
+                : QColor(QStringLiteral("#ECEFF3")));
     const QColor stroke = selected || root
-        ? QColor(QStringLiteral("#4E7FD4"))
-        : QColor(QStringLiteral("#8493A7"));
+        ? QColor(QStringLiteral("#5F7FAF"))
+        : QColor(QStringLiteral("#858D98"));
     painter.setPen(QPen(stroke, 1.35, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(fill);
     const QRectF body(rect.left() + 2.5, rect.top() + 6.5,
@@ -84,12 +84,12 @@ void drawRepositoryIcon(QPainter &painter, const QRect &rect, bool selected)
     const QRectF tile(rect.left() + 1.0, rect.top() + 1.0,
                       rect.width() - 2.0, rect.height() - 2.0);
     painter.setPen(Qt::NoPen);
-    painter.setBrush(selected ? QColor(QStringLiteral("#C9DEFF"))
-                              : QColor(QStringLiteral("#E3EDFF")));
-    painter.drawRoundedRect(tile, 6.0, 6.0);
+    painter.setBrush(selected ? QColor(QStringLiteral("#D9E4F5"))
+                              : QColor(QStringLiteral("#E8EDF5")));
+    painter.drawRoundedRect(tile, 5.0, 5.0);
 
-    const QColor branchColor = selected ? QColor(QStringLiteral("#1E5FC4"))
-                                        : QColor(QStringLiteral("#326FCE"));
+    const QColor branchColor = selected ? QColor(QStringLiteral("#285EBD"))
+                                        : QColor(QStringLiteral("#4A70AD"));
     painter.setPen(QPen(branchColor, 1.6, Qt::SolidLine,
                         Qt::RoundCap, Qt::RoundJoin));
     const QPointF upper(tile.left() + 7.0, tile.top() + 6.0);
@@ -135,15 +135,15 @@ public:
                                                    -RowHorizontalInset, -2);
         if (selected || hovered) {
             painter->setPen(Qt::NoPen);
-            painter->setBrush(selected ? QColor(QStringLiteral("#DCEAFF"))
-                                       : QColor(QStringLiteral("#F0F5FC")));
-            painter->drawRoundedRect(rowRect, 8.0, 8.0);
+            painter->setBrush(selected ? QColor(QStringLiteral("#E7EDF7"))
+                                       : QColor(QStringLiteral("#F3F4F6")));
+            painter->drawRoundedRect(rowRect, 6.0, 6.0);
         }
 
         const int depth = RepositoryTree::nodeDepth(index);
         const int contentLeft = option.rect.left() + BaseIndent + depth * LevelIndent;
-        painter->setPen(QPen(selected ? QColor(QStringLiteral("#B6D0F7"))
-                                     : QColor(QStringLiteral("#D8E1ED")),
+        painter->setPen(QPen(selected ? QColor(QStringLiteral("#C5D3E7"))
+                                     : QColor(QStringLiteral("#D9DDE3")),
                             1.0));
         for (int level = 1; level <= depth; ++level) {
             const int guideX = option.rect.left() + BaseIndent
@@ -179,7 +179,7 @@ public:
                            ? QFont::Normal : QFont::DemiBold);
         painter->setFont(font);
         painter->setPen(enabled ? textColor(selected)
-                                : QColor(QStringLiteral("#9AA7B7")));
+                                : QColor(QStringLiteral("#9AA0A9")));
         const int textLeft = iconRect.right() + IconTextGap;
         const QRect textRect(textLeft, option.rect.top(),
                              qMax(0, option.rect.right() - textLeft - 10),

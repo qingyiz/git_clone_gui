@@ -2,6 +2,7 @@
 
 #include "presentation/AppStyle.h"
 #include "presentation/ClonePage.h"
+#include "presentation/NavigationBrandMark.h"
 #include "presentation/WorkspacePage.h"
 
 #include "application/WorkspaceService.h"
@@ -142,21 +143,29 @@ void MainWindow::createUi()
 
     auto *sidebar = new QFrame(root);
     sidebar->setObjectName(QStringLiteral("navigationSidebar"));
-    sidebar->setFixedWidth(188);
+    sidebar->setFixedWidth(164);
     auto *sidebarLayout = new QVBoxLayout(sidebar);
-    sidebarLayout->setContentsMargins(16, 20, 16, 18);
-    sidebarLayout->setSpacing(8);
+    sidebarLayout->setContentsMargins(12, 16, 12, 14);
+    sidebarLayout->setSpacing(6);
+
+    auto *brandRow = new QHBoxLayout;
+    brandRow->setSpacing(8);
+    auto *mark = new NavigationBrandMark(sidebar);
+    mark->setObjectName(QStringLiteral("navigationMark"));
+    brandRow->addWidget(mark);
     auto *brand = new QLabel(QStringLiteral("GitCloneGui"), sidebar);
     brand->setObjectName(QStringLiteral("navigationBrand"));
-    sidebarLayout->addWidget(brand);
-    auto *caption = new QLabel(QStringLiteral("开发工作台"), sidebar);
+    brandRow->addWidget(brand);
+    brandRow->addStretch(1);
+    sidebarLayout->addLayout(brandRow);
+    auto *caption = new QLabel(QStringLiteral("Git 桌面工具"), sidebar);
     caption->setProperty("role", QStringLiteral("muted"));
     sidebarLayout->addWidget(caption);
-    sidebarLayout->addSpacing(18);
+    sidebarLayout->addSpacing(12);
 
-    m_cloneNavigationButton = new QPushButton(QStringLiteral("  仓库克隆"), sidebar);
+    m_cloneNavigationButton = new QPushButton(QStringLiteral("仓库克隆"), sidebar);
     m_cloneNavigationButton->setObjectName(QStringLiteral("cloneNavigationButton"));
-    m_workspaceNavigationButton = new QPushButton(QStringLiteral("  仓库工作区"), sidebar);
+    m_workspaceNavigationButton = new QPushButton(QStringLiteral("仓库工作区"), sidebar);
     m_workspaceNavigationButton->setObjectName(QStringLiteral("workspaceNavigationButton"));
     for (QPushButton *button : {m_cloneNavigationButton, m_workspaceNavigationButton}) {
         button->setCheckable(true);
@@ -172,7 +181,7 @@ void MainWindow::createUi()
             this, &MainWindow::selectPage);
     sidebarLayout->addStretch(1);
     auto *version = new QLabel(
-        QStringLiteral("版本 %1\n本地 Git 工具")
+        QStringLiteral("v%1  ·  本地运行")
             .arg(QCoreApplication::applicationVersion()),
         sidebar);
     version->setObjectName(QStringLiteral("navigationVersionLabel"));

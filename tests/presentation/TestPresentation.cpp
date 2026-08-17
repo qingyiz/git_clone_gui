@@ -1,5 +1,6 @@
 #include "presentation/BranchSelector.h"
 #include "presentation/ChildRepositoryCard.h"
+#include "presentation/AppStyle.h"
 #include "presentation/MainWindow.h"
 #include "application/NavigationConfigurationStore.h"
 
@@ -131,6 +132,7 @@ private slots:
     void branchSelectorUsesCustomRoundedChrome();
     void childCardRequestsBranchesFromItsUrl();
     void firstLaunchCreatesOneCardAndUsesCompactSize();
+    void navigationUsesRestrainedDesktopHierarchy();
     void navigationSwitchesPagesAndPreservesCloneState();
     void navigationRestoresAndPersistsCurrentPage();
     void restoresMultipleCardsWithoutSavingImmediately();
@@ -149,7 +151,7 @@ private slots:
 
 void TestPresentation::initTestCase()
 {
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.5"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.6"));
     qRegisterMetaType<NotificationSeverity>();
 }
 
@@ -318,7 +320,66 @@ void TestPresentation::firstLaunchCreatesOneCardAndUsesCompactSize()
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("configurationPanel")) != nullptr);
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("executionPanel")) != nullptr);
     QCOMPARE(window.findChild<QLabel *>(QStringLiteral("navigationVersionLabel"))->text(),
-             QStringLiteral("版本 0.1.5\n本地 Git 工具"));
+             QStringLiteral("v0.1.6  ·  本地运行"));
+}
+
+void TestPresentation::navigationUsesRestrainedDesktopHierarchy()
+{
+    DummyProcessRunner runner;
+    CloneController controller(&runner);
+    FakeConfigurationStore store;
+    MainWindow window(&controller, &store);
+    window.show();
+    QTest::qWait(30);
+
+    QWidget *sidebar =
+        window.findChild<QWidget *>(QStringLiteral("navigationSidebar"));
+    QWidget *mark = window.findChild<QWidget *>(QStringLiteral("navigationMark"));
+    QLabel *title = window.findChild<QLabel *>(QStringLiteral("appTitle"));
+    QVERIFY(sidebar != nullptr);
+    QCOMPARE(sidebar->width(), 164);
+    QVERIFY(sidebar->width() < 188);
+    QVERIFY(mark != nullptr);
+    QCOMPARE(mark->size(), QSize(28, 28));
+    QVERIFY(qobject_cast<QLabel *>(mark) == nullptr);
+    QCOMPARE(mark->property("iconSemantic").toString(), QStringLiteral("gitBranch"));
+    QCOMPARE(mark->accessibleName(), QStringLiteral("Git 分支"));
+
+    const QImage markImage = mark->grab().toImage().convertToFormat(QImage::Format_ARGB32);
+    QVERIFY(!markImage.isNull());
+    int surfacePixels = 0;
+    int branchPixels = 0;
+    for (int y = 0; y < markImage.height(); ++y) {
+        for (int x = 0; x < markImage.width(); ++x) {
+            const QColor pixel = markImage.pixelColor(x, y);
+            if (pixel.red() >= 225 && pixel.red() <= 245
+                && pixel.green() >= 230 && pixel.green() <= 248
+                && pixel.blue() >= 235 && pixel.blue() <= 252) {
+                ++surfacePixels;
+            }
+            if (pixel.red() >= 45 && pixel.red() <= 110
+                && pixel.green() >= 65 && pixel.green() <= 135
+                && pixel.blue() >= 100 && pixel.blue() <= 170
+                && pixel.blue() > pixel.red() + 25) {
+                ++branchPixels;
+            }
+        }
+    }
+    QVERIFY(surfacePixels > 100);
+    QVERIFY(branchPixels > 15);
+    QVERIFY(title != nullptr);
+    QVERIFY(title->font().pixelSize() <= 20);
+
+    const QString style = applicationStyleSheet();
+    const qsizetype selectorStart = style.indexOf(
+        QStringLiteral("QPushButton[buttonRole=\"navigation\"]:checked"));
+    QVERIFY(selectorStart >= 0);
+    const qsizetype selectorEnd = style.indexOf(QLatin1Char('}'), selectorStart);
+    QVERIFY(selectorEnd > selectorStart);
+    const QString checkedRule = style.mid(selectorStart,
+                                          selectorEnd - selectorStart);
+    QVERIFY(checkedRule.contains(QStringLiteral("background: #E1E4E8")));
+    QVERIFY(!checkedRule.contains(QStringLiteral("background: #2F6FEB")));
 }
 
 void TestPresentation::navigationSwitchesPagesAndPreservesCloneState()

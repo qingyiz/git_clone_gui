@@ -120,33 +120,33 @@ void BranchSelector::paintEvent(QPaintEvent *event)
     const bool hovered = underMouse();
     const QString lookupState = property("lookupState").toString();
 
-    QColor background(QStringLiteral("#F8FAFC"));
-    QColor border(QStringLiteral("#CBD5E1"));
-    QColor separator(QStringLiteral("#E2E8F0"));
-    QColor arrow(QStringLiteral("#475569"));
+    QColor background(QStringLiteral("#FBFBFC"));
+    QColor border(QStringLiteral("#C9CED6"));
+    QColor separator(QStringLiteral("#E2E5E9"));
+    QColor arrow(QStringLiteral("#646B75"));
     qreal borderWidth = 1.0;
 
     if (!isEnabled()) {
-        background = QColor(QStringLiteral("#F1F5F9"));
-        border = QColor(QStringLiteral("#E2E8F0"));
-        separator = QColor(QStringLiteral("#E2E8F0"));
-        arrow = QColor(QStringLiteral("#94A3B8"));
+        background = QColor(QStringLiteral("#EFF1F3"));
+        border = QColor(QStringLiteral("#DDE1E6"));
+        separator = QColor(QStringLiteral("#DDE1E6"));
+        arrow = QColor(QStringLiteral("#969CA5"));
     } else if (focused || m_popupVisible) {
         background = QColor(QStringLiteral("#FFFFFF"));
-        border = QColor(QStringLiteral("#3B82F6"));
-        separator = QColor(QStringLiteral("#DBEAFE"));
-        arrow = QColor(QStringLiteral("#2563EB"));
+        border = QColor(QStringLiteral("#2F6FEB"));
+        separator = QColor(QStringLiteral("#DCE4F1"));
+        arrow = QColor(QStringLiteral("#285EBD"));
         borderWidth = 1.5;
     } else if (lookupState == QStringLiteral("error")) {
-        border = QColor(QStringLiteral("#F59E0B"));
-        arrow = QColor(QStringLiteral("#B45309"));
+        border = QColor(QStringLiteral("#B9823E"));
+        arrow = QColor(QStringLiteral("#8D5D22"));
     } else if (lookupState == QStringLiteral("loading")) {
-        border = QColor(QStringLiteral("#60A5FA"));
-        arrow = QColor(QStringLiteral("#2563EB"));
+        border = QColor(QStringLiteral("#6F96D8"));
+        arrow = QColor(QStringLiteral("#285EBD"));
     } else if (hovered) {
         background = QColor(QStringLiteral("#FFFFFF"));
-        border = QColor(QStringLiteral("#94A3B8"));
-        arrow = QColor(QStringLiteral("#2563EB"));
+        border = QColor(QStringLiteral("#AAB1BB"));
+        arrow = QColor(QStringLiteral("#3E454F"));
     }
 
     QPainter painter(this);
