@@ -172,8 +172,7 @@ void WorkspacePage::createUi()
 
     m_branchSearch = new QLineEdit(branchCard);
     m_branchSearch->setObjectName(QStringLiteral("workspaceBranchSearch"));
-    m_branchSearch->setPlaceholderText(
-        QStringLiteral("搜索分支（支持少量错字）…"));
+    m_branchSearch->setPlaceholderText(QStringLiteral("搜索分支名…"));
     m_branchSearch->setClearButtonEnabled(true);
     branchLayout->addWidget(m_branchSearch);
 

@@ -151,7 +151,7 @@ private slots:
 
 void TestPresentation::initTestCase()
 {
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.6"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.7"));
     qRegisterMetaType<NotificationSeverity>();
 }
 
@@ -320,7 +320,7 @@ void TestPresentation::firstLaunchCreatesOneCardAndUsesCompactSize()
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("configurationPanel")) != nullptr);
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("executionPanel")) != nullptr);
     QCOMPARE(window.findChild<QLabel *>(QStringLiteral("navigationVersionLabel"))->text(),
-             QStringLiteral("v0.1.6  ·  本地运行"));
+             QStringLiteral("v0.1.7  ·  本地运行"));
 }
 
 void TestPresentation::navigationUsesRestrainedDesktopHierarchy()

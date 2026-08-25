@@ -8,13 +8,13 @@
 >
 > 状态：已更新
 >
-> 最近更新：2026-08-17
+> 最近更新：2026-08-25
 
 ## 设计摘要
 
 - 目标：在保留既有克隆与交付能力的基础上，增加左侧导航和独立仓库工作区页面，递归发现嵌套 Git 工作树并安全查看/切换分支。
-- 覆盖行为：REQ-001～REQ-013，当前增量聚焦 REQ-011 / AC-011.11，并交付已验收的 REQ-006 / AC-006.1～AC-006.8。
-- 核心方案：沿用版本单一来源、PR 合并后打不可移动标签、双平台原生构建和标签自动 Release 流程；本轮只增加 `v0.1.6` 版本与说明，不改 CI、签名、部署或业务架构。
+- 覆盖行为：REQ-001～REQ-013，当前增量聚焦 REQ-013 / AC-013.4、AC-013.9、AC-013.20 与 REQ-011 / AC-011.12：恢复纯包含搜索、完整更新远端引用并发布 `v0.1.7`。
+- 核心方案：表示层删除 BranchNameMatcher，WorkspacePage 直接做大小写不敏感包含筛选；基础设施层沿用单异步 QProcess 状态机，loadBranches 先读取 remote 名单，再逐个以显式 all-heads refspec fetch/prune，全部成功后读取 HEAD/refs/status；发布沿用已验证的版本单一来源、PR 合并、注释标签和双平台 Release 流程。
 - 模块/构建边界：ARCH-001～ARCH-013 / BUILD-001～BUILD-011；不新增 target，只在既有 application/infrastructure/presentation target 内增加源码和符合现有方向的依赖。
 
 ## 代码库调查
@@ -22,7 +22,7 @@
 | 证据类型 | 证据 | 已验证事实 | 对设计的影响 |
 |---|---|---|---|
 | 当前结构 | `inspect_structure.py` | TASK-040 实施后为 60 个源文件；NavigationBrandMark 52 行，MainWindow 219 行，ClonePage 370 行，WorkspacePage 416 行，AppStyle 427 行，RepositoryTree 272 行；五层 target 保持 | 品牌图标绘制提取为小型 presentation 组件，MainWindow 仍低于约 220 行预算；只向既有 target 增加源码，无新 target、跨层依赖或 I/O 职责 |
-| 当前分支详情 | `WorkspacePage.*`、`TestWorkspacePresentation.cpp` | UI 已只保留本地/远端待跟踪两个列表并共享搜索框；`applyBranchFilter()` 仅使用大小写不敏感 `contains`，错输字符后零结果 | 保持页面列表状态和底层 remote refs 契约；将匹配算法提取为 presentation 纯 helper，页面只消费 bool 结果 |
+| 当前分支详情 | `WorkspacePage.*`、`GitWorkspaceService.*`、相关测试 | v0.1.6 仍调用 `BranchNameMatcher` 做容错搜索；工作区只读本地 `refs/remotes/*`，没有 fetch，因此服务器新增/删除分支不会及时反映 | 删除模糊 helper 并恢复 contains；在既有串行异步 Git 状态机前置 fetch/prune，保持 presentation/application 契约不变 |
 | 当前 core | `CloneRequest.h/.cpp` | 已使用 `QList<ChildRepositoryRequest/Plan>`；父/子 clone 均未传 `--progress` | 命令计划增加显式进度参数，保持结构化执行与顺序不变 |
 | 当前 application | `CloneController.cpp` | 已用 currentChildIndex 串行推进 0～N 子队列，所有结果汇入 `finish()` | 在有效任务开始时启动单调计时，在统一 finish 路径追加一次总耗时 |
 | 当前 presentation | 用户截图、`MainWindow.cpp`、`AppStyle.cpp` | TASK-039 已收紧整体视觉，但品牌位仍是 26px 高饱和蓝底 `QLabel("G")`，没有 Git/仓库语义 | 用 Qt painter 绘制分支节点，避免字体、emoji、平台 theme icon 和小位图缩放差异 |
@@ -62,7 +62,7 @@
 - 结果反馈优先于克隆完成后自动发生的重新校验；用户再次编辑任一配置时才恢复校验视觉状态。
 - clone 命令计划负责声明 `--progress`；runner 只转发字节，controller 只统计整个任务耗时，职责不跨层。
 - 主窗口只组合导航和页面，不直接遍历文件系统或启动 Git；每个独立页面持有自己的视图状态。
-- 工作区扫描不跟随符号链接、不进入 `.git`，发现仓库后不剪枝；远端候选只基于当前 remote-tracking refs，不隐式 fetch。
+- 工作区扫描不跟随符号链接、不进入 `.git`，发现仓库后不剪枝；分支加载只允许枚举 remotes 并以显式 all-heads refspec fetch/prune 更新 remote-tracking refs，不执行 pull/push/reset/stash/clean。
 
 ## 方案比较
 
@@ -88,9 +88,11 @@
 | R：并行扫描多个子树 | AC-013.18 | 高并发磁盘上可能更快 | HDD/网络盘可能更慢，取消/排序/资源占用复杂，证据不足 | 本轮否决 |
 | S：单 worker 低开销迭代 | AC-013.18 | 保持顺序和取消模型，消除 canonical 与 QFileInfoList 开销 | 仍受磁盘目录数下限约束 | 采用 |
 | T：子序列模糊匹配 | AC-013.20 | 算法简单、漏字可命中 | 替换或多输错误字符无法稳定命中，且长名称弱相关结果多 | 否决 |
-| U：有界 Damerau-Levenshtein 连续区域匹配 | AC-013.20、NFR-017 | 覆盖插入/删除/替换/相邻颠倒，阈值可测，完整分支名中间片段也可命中 | 每项需要 O(关键词长度 × 分支名长度) 计算 | 采用 |
+| U：有界 Damerau-Levenshtein 连续区域匹配 | 历史 AC-013.20（v0.1.5） | 覆盖常见输入错误 | 用户反馈结果不可预期 | 已废弃，恢复纯包含搜索 |
 | V：保留当前信息架构，在 Widgets/QSS/自绘控件内重建低饱和桌面 token | REQ-006、NFR-018 | 改动可控，两页功能和自动化对象名不变，Qt 5/6 兼容 | 需要 QSS 与硬编码 painter 色值同步审查 | 采用 |
 | W：引入第三方主题库或迁移 QML | REQ-006 | 可快速获得成套组件皮肤 | 新增依赖与部署闭包，需改写大量已验证 Widgets 和测试 | 否决 |
+| X：枚举 remotes 后逐个显式 fetch all heads + prune | AC-013.4、AC-013.9 | 不受原有 single-branch/窄 refspec 限制，新增/删除分支与服务器一致，跟踪切换可直接使用本地 ref | 多 remote 串行增加网络、认证与超时风险 | 采用 |
+| Y：只用 `ls-remote` 展示服务器 heads | AC-013.4 | 不下载对象 | 列表与本地 remote-tracking refs 分裂，`switch --track` 可失败，且需新数据契约 | 否决 |
 
 ### DEC-001：以结构化 QProcess 参数执行 Git
 
@@ -246,11 +248,11 @@
 
 ### DEC-020：远端待跟踪分支按短名差集计算
 
-- 上下文与需求：REQ-013 / AC-013.4～AC-013.7；ANA-019、ANA-020。
-- 决策：读取 `refs/heads` 和 `refs/remotes`，排除 `*/HEAD`；远端完整名移除第一个 `/` 得到短分支名，短名存在于本地集合时不进入候选，否则保留完整 `<remote>/<branch>` 供切换。
+- 上下文与需求：REQ-013 / AC-013.4～AC-013.9；ANA-019、ANA-020、ANA-035。
+- 决策：`loadBranches` 先结构化执行 `git -C <repo> remote`，再对每个 remote 串行执行 `git -C <repo> fetch --prune <remote> +refs/heads/*:refs/remotes/<remote>/*`；全部成功后读取 `refs/heads` 和 `refs/remotes`，排除 `*/HEAD`，按短名差集产生候选。fetch 使用 `GIT_TERMINAL_PROMPT=0`、每 remote 60 秒超时和既有取消/busy 状态。
 - 理由：满足“远端只列出本地没有的”，并在多个 remote 同名时避免丢失来源信息。
-- 代价：只读取当前 remote-tracking refs，不自动 fetch；远端实际新分支需用户先在应用外更新引用。
-- 被否决方案：按完整 ref 比较；自动 fetch。
+- 代价：分支加载增加网络与认证依赖；fetch 失败时整次加载失败并保留页面旧 catalog，不把旧 refs 伪装成完整远端结果。
+- 被否决方案：按完整 ref 比较；继续只读本地缓存（会稳定遗漏远端新增分支）；使用 `ls-remote` 仅展示但不更新跟踪引用（后续 `git switch --track` 缺少本地 remote-tracking ref）。
 
 ### DEC-021：仓库树使用专用控件与自绘 delegate
 
@@ -316,13 +318,13 @@
 - 代价：筛选成本为 O(n)，每次输入会检查两个列表；若实际规模显著超过 1,000 且容量测试无法满足，再将两个列表迁移到共享源模型与 `QSortFilterProxyModel`。
 - 被否决方案：保留“全部远端”并给三个页签都加搜索（违背明确范围）；为当前 1,000 项立即引入自定义 model/proxy（增加状态同步和选中映射复杂度）；搜索时重新运行 Git（引入延迟与不必要 I/O）。
 
-### DEC-029：分支模糊匹配使用独立的有界连续区域编辑距离 helper
+### DEC-029：v0.1.5 有界模糊匹配（已废弃）
 
 - 上下文与需求：REQ-013 / AC-013.20，NFR-017；FACT-034、ANA-029。
-- 决策：presentation 新增无 QWidget/I/O 状态的 `BranchNameMatcher` helper。`matches(branchName, query)` 对 trim/case-fold 后文本先做包含匹配；查询长度小于 3 时到此结束。未命中时用 Damerau-Levenshtein 动态规划计算查询与分支名任意连续区域的最小距离，支持插入、删除、替换和相邻字符颠倒；3～4/5～8/9+ 字符的最大距离分别为 1/2/3。`WorkspacePage` 只调用 matcher 并继续管理 item 可见性、选择和按钮状态。
-- 理由：连续区域距离允许用户只记得分支名片段，不要求输入 remote/namespace 全名；Damerau 操作覆盖常见键入错误。独立 helper 避免 415 行的 WorkspacePage 越过约 420 行预算，并可直接表驱动测试阈值边界。
-- 代价：模糊路径为 O(m×n) 时间、O(n) 临时空间；精确包含优先跳过大多数动态规划，最大距离固定为 3，2,000 项容量测试继续约束整体耗时。
-- 被否决方案：仅子序列匹配（不能覆盖替换/多输字母）；无上限编辑距离（误命中与性能不可控）；把算法继续写入 WorkspacePage（越过复杂度预算）；引入第三方 fuzzy-search 库（当前规模不需要新依赖）。
+- 决策：历史实现曾新增 `BranchNameMatcher`；2026-08-25 按用户反馈删除该 helper、构建登记与容错测试，`WorkspacePage::applyBranchFilter()` 直接使用 `QString::contains(query, Qt::CaseInsensitive)`。
+- 理由：纯包含搜索结果集合可直接解释，避免错字容错产生弱相关结果；现有 2,000 项线性筛选满足容量门槛。
+- 代价：用户输入错误时不再给出猜测结果，需要修正关键词；换取确定性与更低 O(分支名长度) 单项成本。
+- 被否决方案：保留有界 Damerau-Levenshtein、子序列或第三方 fuzzy-search（均与本轮明确撤销容错的要求冲突）。
 
 ### DEC-030：分支搜索改进以 `v0.1.5` 补丁版本交付
 
@@ -355,6 +357,14 @@
 - 理由：补丁版本适合向后兼容的视觉与品牌修正；沿用已在 `v0.1.5` 验证的流水线可保持源码、运行时版本、双平台包和 Release 页面一致。
 - 代价：线上 run、Release 与附件证据只能在标签推送后获得，因此需要发布提交和证据回写提交两个可追溯步骤。
 - 被否决方案：移动/复用 `v0.1.5`（破坏历史可追溯性）；直接在功能分支打标签（标签不位于 `main` 合并历史）；手工创建 Release 或上传本地包（绕过两个目标平台的原生验证）。
+
+### DEC-034：分支刷新修复以 `v0.1.7` 补丁版本交付
+
+- 上下文与需求：REQ-011 / AC-011.12；FACT-041、ANA-036。
+- 决策：沿用 DEC-027 的 `${PROJECT_VERSION}` 单一来源和既有标签 workflow，把项目版本提升为 `0.1.7` 并新增 `docs/releases/v0.1.7.md`。功能分支先重放到最新 `origin/main`，经 PR 合并后从合并提交创建 `v0.1.7` 注释标签；等待 macOS arm64、Windows x64 和 Publish GitHub Release 三个标签 job 成功，再核对正文、附件大小和 SHA-256 并回写 Spec。
+- 理由：两个修复保持 application 契约与平台产物形态不变，适合补丁版本；复用已验证流水线能让源码、运行时版本和双平台下载保持一致。
+- 代价：发布证据只能在标签推送后取得，需要功能发布提交与证据回写提交两个步骤。
+- 被否决方案：移动/覆盖 `v0.1.6`；从落后于 `origin/main` 的提交打标签；绕过 PR 或 Actions 手工上传本地产物。
 
 ## 总体架构
 
@@ -496,7 +506,7 @@ flowchart LR
 
 - application 定义 `RepositoryInfo`、`BranchCatalog`、`BranchTarget` 与 `WorkspaceService` 信号/命令契约，不依赖 Widgets/文件系统/QProcess。
 - infrastructure 的 `GitWorkspaceService` 独占扫描 worker、取消 token、Git 进程、输出解析和结构化 switch 参数；同一时刻最多一个扫描和一个 Git 操作，新的请求使旧结果失效。
-- 扫描不得进入 `.git` 或跟随符号链接；分支操作不得执行 fetch/reset/stash/clean 或 shell。
+- 扫描不得进入 `.git` 或跟随符号链接；分支加载仅允许结构化枚举 remotes 并以显式 all-heads refspec fetch/prune 更新 remote-tracking refs，分支切换不得执行 fetch；任何路径都不得执行 pull/push/reset/stash/clean 或 shell。
 - `tests/infrastructure` 拥有临时目录扫描和真实本地 Git 仓库测试；`tests/presentation` 只用 fake service 验证页面状态。
 
 ### ARCH-012：工作区配置与状态读取保持边界独立
@@ -509,7 +519,7 @@ flowchart LR
 ### ARCH-013：启动状态和扫描优化不跨层
 
 - application 的导航 store 只公开 `NavigationPage`，不依赖 Widgets/QSettings；MainWindow 不保存原始 stacked index 或按钮文本。
-- `WorkspacePage` 只决定恢复后是否请求扫描，目录遍历实现仍完全位于 `GitWorkspaceService` worker；自动扫描不得把文件系统 I/O 移回 UI 线程。
+- `WorkspacePage` 只决定恢复后是否请求扫描并管理列表筛选；目录遍历和 remote 枚举/fetch/ref/status 串行实现仍完全位于 `GitWorkspaceService`，不得把文件系统或网络 I/O 移回 UI 线程。
 - `GitWorkspaceService` 优化只能替换遍历内部算法，scan/取消/signals 与 `RepositoryInfo` 契约保持不变；不得为性能默认忽略任意普通目录。
 - store adapters 可共享 organization/application 的物理 QSettings，但必须使用互不覆盖的 clone/workspace/navigation namespace。
 
@@ -620,7 +630,7 @@ flowchart LR
 | WorkspacePage | 新页面 | 解析 Git 输出、遍历目录、或单实现文件超过约 420 行 | I/O 留在 adapter；视图子区域再拆 widget/model | include/API 审查 |
 | AppStyle | 增量前 411 行，TASK-039 实施后 434 行集中 QSS | 超过约 480 行或同类颜色在多个控件无规则漂移 | 按导航/表单/列表/状态拆分私有 QSS 片段，不将业务状态放入样式类 | 结构行数 + 选择器/属性审查 |
 | NavigationBrandMark | 新小型自绘组件 | 拥有导航状态/I/O、依赖 application/infrastructure，或实现超过约 100 行 | 保持组件仅做 paint/size/accessibility，复杂图标抽出 presentation 私有 helper | include/API + 像素测试 |
-| BranchNameMatcher | 新纯匹配 helper | 访问 QWidget/WorkspaceService、拥有列表状态，或引入第三方依赖 | UI 状态留在 WorkspacePage；算法保持 QString 输入与 bool 输出 | 表驱动算法测试 + include 审查 |
+| BranchNameMatcher（已移除） | v0.1.5 历史 helper | 用户要求撤销容错搜索时删除生产源与构建登记 | 包含筛选直接留在 WorkspacePage；测试保护错字不命中 |
 | RepositoryTree | 新视觉组件 | 访问 WorkspaceService、构建仓库层级或超过约 320 行 | 数据构建留在 WorkspacePage；图形 helper 保持组件私有 | include/API + paint 测试 |
 | GitWorkspaceService | 新适配器 | 同时拥有 UI、持久化，或单文件超过约 420 行 | 扫描 helper 与 Git parser 可拆为 infrastructure 私有实现 | include/API/结构审查 |
 | BranchSelector | 新组件 | 解析 Git 输出、管理多 URL 或访问 CloneController | 分别留在 infrastructure/MainWindow | include/API 审查 |
@@ -644,7 +654,7 @@ flowchart LR
 | `RemoteBranchService::requestBranches` | 仓库 URL | request ID；异步 catalog/error | 15 秒超时、取消/过期可忽略 | QtCore 5.15/6 |
 | `BranchSelector` | URL + 可选初始分支 | branch text、下拉 suggestions | 查询失败仍可手输 | QtWidgets 5.15/6 |
 | `WorkspaceService::scan` | 现有工作目录 | 异步 repository list + skipped count | invalid/unreadable error；新 scan 使旧结果失效 | QtCore 5.15/6 |
-| `WorkspaceService::loadBranches` | repository absolute path | 异步 current/local/remote/candidates | repo missing/Git error，保留页面旧 catalog | QtCore 5.15/6 |
+| `WorkspaceService::loadBranches` | repository absolute path | 先 fetch/prune 全部 remotes，再异步返回 current/local/remote/candidates/status | fetch/repo/Git/认证/超时错误时保留页面旧 catalog | QtCore 5.15/6 |
 | `WorkspaceService::switchBranch` | repository path + local/remote target | 异步 success/error；成功改变 HEAD | 结构化 `git switch`，失败不做补救性修改 | QtCore 5.15/6 |
 | `WorkspaceConfigurationStore::loadRootPath` | 无 | optional root path | 无配置/不可读返回 nullopt | C++17 |
 | `WorkspaceConfigurationStore::saveRootPath` | trimmed path | bool | sync 错误 false；不修改页面输入 | C++17 |
@@ -799,6 +809,11 @@ remoteCandidates(local, remote):
     short = text after first '/'
     include full remote ref iff short not in localSet
 
+loadBranches(repo):
+  run `git -C repo remote`; for each remote run `fetch --prune remote +refs/heads/*:refs/remotes/remote/*` with terminal prompts disabled
+  on success read current HEAD, refs/heads, refs/remotes, then porcelain status
+  on fetch failure keep the page's previous catalog and emit a diagnosable error
+
 parseWorkingTreeStatus(lines):
   for each non-empty porcelain v1 record:
     if XY == "??": untracked += 1
@@ -825,7 +840,7 @@ parseWorkingTreeStatus(lines):
 | 签名或公证验证失败 | `codesign`/`notarytool`/`signtool` 非零 | 停止发布，不上传冒充正式签名的包 | GitHub job 失败 | 更新证书/密码/协议后重跑 |
 | 工作目录无效/不可读 | service preflight/worker | 不替换旧结果 | 路径与具体错误 | 重新选择并扫描 |
 | 子目录不可读 | worker error count | 跳过该子树并继续 | 完成提示含跳过数量 | 修正权限后重新扫描 |
-| 仓库被删除/refs 读取失败 | Git 非零/启动失败 | 保留树与旧 catalog，禁用切换 | 仓库路径 + Git 输出 | 重新扫描/刷新 |
+| fetch/仓库/refs/status 失败 | Git 非零/启动失败/60 秒 fetch 或 15 秒本地命令超时 | 保留树与旧 catalog，禁用切换 | 仓库路径 + Git 输出 | 修复网络、认证、权限或仓库后刷新 |
 | switch 工作区冲突 | Git 非零 | 不执行 stash/reset/clean | 原始 Git 错误，当前分支不伪更新 | 用户手工处理后重试 |
 | 工作目录配置不可写 | QSettings sync status | 保留当前输入并继续页面操作 | 非阻塞状态提示 | 后续编辑或下次启动重试 |
 | status 读取失败 | Git 非零/启动失败/超时 | 整次 catalog load 失败，不伪造 clean | 仓库路径 + Git 输出 | 修复权限/仓库后刷新 |
@@ -959,7 +974,7 @@ parseWorkingTreeStatus(lines):
 ### PROP-019：分支切换只执行选定结构化操作
 
 - 来源：REQ-013 / AC-013.6～AC-013.9，NFR-001。
-- 属性：任意本地目标仅映射为参数数组 `switch -- <branch>`，任意远端目标仅映射为 `switch --track -- <remote>/<branch>`；`--` 保证分支名不会被解释为选项，输入不经 shell。Git 非零时不产生 success，且 service 不启动 fetch/reset/stash/clean。
+- 属性：任意本地目标仅映射为参数数组 `switch -- <branch>`，任意远端目标仅映射为 `switch --track -- <remote>/<branch>`；`--` 保证分支名不会被解释为选项，输入不经 shell。Git 非零时不产生 success；切换路径不启动 fetch/reset/stash/clean，分支加载路径只允许结构化 remote 枚举与显式 all-heads fetch/prune。
 - 验证：fake/命令构造断言、元字符分支名拒绝或单参数测试、真实 Git 成功与冲突失败集成测试。
 
 ### PROP-020：页面切换保持独立状态
@@ -1006,7 +1021,7 @@ parseWorkingTreeStatus(lines):
 
 ### PROP-027：版本与发布说明保持一致
 
-- 来源：REQ-011 / AC-011.8～AC-011.11。
+- 来源：REQ-011 / AC-011.8～AC-011.12。
 - 属性：配置为 `PROJECT_VERSION=X` 时，运行时 applicationVersion、macOS Bundle short/build version 和侧栏文本均为 X；标签 `vX` 若存在同名说明文件则 Release 正文等于该文件，否则使用自动说明。
 - 验证：CMake cache/编译定义、presentation 标签、`Info.plist` 和 GitHub Release API 检查。
 
@@ -1016,11 +1031,11 @@ parseWorkingTreeStatus(lines):
 - 属性：对任意本地/远端候选集合与关键词 `q`，两个列表的可见项分别且恰好为其 `BranchNameRole` 大小写不敏感包含 `q.trimmed()` 的项；清空 `q` 后全部项恢复。筛选不改变 item 的 `BranchKindRole`/`BranchNameRole`、不调用 WorkspaceService，隐藏项不能触发切换；任一列表 1,000 项时更新在开发机 250ms 内完成。
 - 验证：presentation 表驱动测试覆盖大小写、短名片段、页签切换、无匹配、清空、加载新 catalog 与切换 target；1,000 项 `QElapsedTimer` 和 fake service 调用计数。
 
-### PROP-029：模糊分支匹配严格遵守长度阈值与编辑类型
+### PROP-029：v0.1.5 模糊分支匹配（已废弃）
 
 - 来源：REQ-013 / AC-013.20，NFR-017。
-- 属性：任意 branch/query 先遵守 trim 后大小写不敏感包含匹配；query 长度 1～2 时非包含项恒不匹配。长度 3～4/5～8/9+ 的 query 仅当其与 branch 任一连续区域的 Damerau-Levenshtein 最小距离分别不超过 1/2/3 时匹配；超出阈值恒不匹配。匹配不改变原始分支名/角色、不访问 WorkspaceService，两个 1,000 项列表的模糊更新仍在 250ms 内完成。
-- 验证：BranchNameMatcher 表驱动测试覆盖大小写/trim、前中后片段、插入、删除、替换、相邻颠倒、各长度阈值内外；WorkspacePage 2,000 项错字筛选、切换 target 与 fake service 零调用测试。
+- 属性：历史版本曾按查询长度启用 Damerau-Levenshtein 容错；2026-08-25 用户明确要求移除，当前正确性由 PROP-028 的纯包含集合约束覆盖。
+- 验证：删除 BranchNameMatcher 源码/构建登记；presentation 测试断言包含、大小写与 trim 命中，同时错字和相邻颠倒不命中。
 
 ### PROP-030：默认双页视觉遵守桌面工具的节制层级
 
@@ -1033,6 +1048,12 @@ parseWorkingTreeStatus(lines):
 - 来源：REQ-006 / AC-006.8，NFR-018。
 - 属性：默认 MainWindow 中 `navigationMark` 必须存在且不是文本 `QLabel`，其语义属性恒为 `gitBranch`；渲染结果包含低饱和浅色圆角底、中性边框以及由连续蓝灰线段和三个节点组成的可辨识分支图形。DPR 变化只缩放像素密度，不改变 28px 逻辑尺寸、节点数量、语义属性或颜色角色；组件不访问 navigation/service/store/I/O。
 - 验证：presentation 对象类型/尺寸/语义属性/无障碍名称断言，widget grab 的背景与分支色像素分布断言，Qt 5/macOS Retina snapshot 人工检查，完整 Debug/Release 回归。
+
+### PROP-032：分支目录在成功 fetch/prune 后与服务器 refs 一致
+
+- 来源：REQ-013 / AC-013.4、AC-013.9，NFR-001。
+- 属性：对任意已配置 remote 的仓库，`loadBranches` 必须先结构化枚举 remote，并逐个以显式 `+refs/heads/*:refs/remotes/<remote>/*` refspec fetch/prune。即使原配置只抓单分支，成功后服务器新增 head 也必须进入对应 remote-tracking refs 与候选，已删除 head 必须被 prune；过程不改变工作树、索引或 HEAD。任一 fetch 失败不发出 `branchesLoaded`。
+- 验证：临时 bare remote + publisher + consumer 双工作副本集成测试，覆盖 consumer 初始缺少 ref、加载后可见、远程删除后刷新消失；静态审查无 shell/pull/push/reset/stash/clean。
 
 ## 测试策略
 
@@ -1050,7 +1071,7 @@ parseWorkingTreeStatus(lines):
 | REQ-011 / PROP-014,015,027 | CI/delivery | 版本一致性、Windows/macOS 原生 build+CTest、自包含结构、unsigned 降级、签名/公证门控、说明正文与 tag Release | 本地 CMake/UI/Info.plist + Actions jobs + artifact/Release 清单 + 平台签名工具 |
 | REQ-012 / PROP-020 | presentation | 默认页、两个按钮、往返切换、运行中切页、关闭取消 | `test_presentation` + snapshot |
 | REQ-012 / PROP-020,024 | infrastructure/presentation | 导航枚举 store 往返、未知值回退、启动恢复页面 | `test_navigation_configuration_store` + `test_presentation` |
-| REQ-013 / PROP-017～019,021～023,025～026,028～029 | infrastructure/integration/presentation | 嵌套扫描、`.git` 文件、符号链接、取消、性能、branch 差集、工作目录存储/自动扫描、clean/dirty 分类、本地/远端 switch、仅两个可操作页签、2,000 项包含/模糊筛选、仓库树和风险卡语义 | `test_workspace_configuration_store` + `test_git_workspace` + `test_workspace_presentation` + snapshot |
+| REQ-013 / PROP-017～019,021～023,025～026,028 | infrastructure/integration/presentation | 嵌套扫描、fetch/prune 后完整 remote refs、工作目录存储/自动扫描、clean/dirty、本地/远端 switch、2,000 项纯包含筛选和错字不命中 | `test_workspace_configuration_store` + `test_git_workspace` + `test_workspace_presentation` + snapshot |
 
 ## 需求覆盖矩阵
 
@@ -1068,7 +1089,7 @@ parseWorkingTreeStatus(lines):
 | REQ-010 | CloneRequest/MainWindow/MainWindowUi/DesktopNotifier | ARCH-002, ARCH-004, ARCH-006, ARCH-008 | DEC-012,013 | PROP-010,011,013 | core/presentation/snapshot/notification signal |
 | REQ-011 | app CMake/Deploy scripts/release workflow | ARCH-009, BUILD-003, BUILD-005, BUILD-008 | DEC-014,027,030,033 | PROP-014,015,027 | version/UI/Windows/macOS Actions delivery/signature/release notes/assets checksum |
 | REQ-012 | MainWindow/ClonePage/WorkspacePage/NavigationConfigurationStore | ARCH-004, ARCH-010, ARCH-013 | DEC-017,024 | PROP-020,024 | store/navigation/UI/snapshot |
-| REQ-013 | WorkspaceService/WorkspaceConfigurationStore/GitWorkspaceService/QSettingsWorkspaceConfigurationStore/WorkspacePage/BranchNameMatcher/RepositoryTree | ARCH-010～013, BUILD-009～011 | DEC-018～023,025～026,028～029 | PROP-017～019,021～023,025～026,028～029 | store/performance/infrastructure/integration/UI/snapshot |
+| REQ-013 | WorkspaceService/WorkspaceConfigurationStore/GitWorkspaceService/QSettingsWorkspaceConfigurationStore/WorkspacePage/RepositoryTree | ARCH-010～013, BUILD-009～011 | DEC-018～023,025～026,028 | PROP-017～019,021～023,025～026,028 | store/performance/fetch/infrastructure/integration/UI/snapshot |
 
 ## 风险与未决问题
 

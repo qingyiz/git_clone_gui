@@ -1,5 +1,4 @@
 #include "presentation/WorkspacePage.h"
-#include "presentation/BranchNameMatcher.h"
 #include "presentation/RepositoryTree.h"
 
 #include "application/WorkspaceConfigurationStore.h"
@@ -376,7 +375,7 @@ void WorkspacePage::applyBranchFilter()
         for (int row = 0; row < list->count(); ++row) {
             QListWidgetItem *item = list->item(row);
             const QString branchName = item->data(BranchNameRole).toString();
-            item->setHidden(!fuzzyBranchNameMatches(branchName, query));
+            item->setHidden(!branchName.contains(query, Qt::CaseInsensitive));
         }
         if (list->currentItem() != nullptr && list->currentItem()->isHidden()) {
             list->setCurrentItem(nullptr);
