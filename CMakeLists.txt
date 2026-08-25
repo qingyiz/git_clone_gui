@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
     GitCloneGui
-    VERSION 0.1.6
+    VERSION 0.1.7
     DESCRIPTION "Clone a parent Git repository and a nested child repository"
     LANGUAGES CXX
 )

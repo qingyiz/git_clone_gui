@@ -28,7 +28,7 @@
 
 长期版本从 [GitHub Releases](https://github.com/qingyiz/git_clone_gui/releases) 下载：
 
-当前版本：`0.1.6`。应用左侧底部、macOS Bundle 元数据与 GitHub 标签使用同一版本号。
+当前版本：`0.1.7`。应用左侧底部、macOS Bundle 元数据与 GitHub 标签使用同一版本号。
 
 - `GitCloneGui-macOS-arm64.dmg`：Apple Silicon Mac（M1/M2/M3/M4 等）；
 - `GitCloneGui-Windows-x64.zip`：64 位 Windows 10/11 便携包，解压后运行 `GitCloneGui.exe`。
@@ -111,8 +111,8 @@ cmake --install build/windows --config Release --prefix build/install-windows
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v0.1.6 -m "GitCloneGui v0.1.6"
-git push origin v0.1.6
+git tag -a v0.1.7 -m "GitCloneGui v0.1.7"
+git push origin v0.1.7
 ```
 
 标签推送后到仓库的 Actions 页面观察两个平台 job；全部成功后，Release 页面会自动出现附件。不要在构建失败时手工上传裸 `.exe` 或 build-tree `.app`，它们没有完整运行时。
@@ -171,10 +171,10 @@ Apple 公证是在线外部服务，证书申请、开发者年费、协议状�
 1. 点击左侧“仓库工作区”，选择一个包含多个项目的工作目录；选择后会自动扫描，也可点击“扫描仓库”重新扫描。应用会记住关闭前所在页面和工作目录，下次启动时恢复页面，并对仍然有效的目录自动扫描一次。
 2. 左侧仓库树按工作目录相对路径显示所有 Git 工作树。扫描不会进入 `.git` 元数据目录，也不会跟随目录符号链接；发现父仓库后仍会继续检查普通子目录，因此嵌套仓库也会显示。
 3. 选中仓库后，右侧显示当前分支和实时工作树状态。工作区干净时显示绿色说明；存在改动时显示橙色警示，并列出已暂存、未暂存、未跟踪和冲突中的非零数量。
-4. 分支区域只显示“本地分支”和“远端待跟踪”两个可操作标签。搜索优先执行大小写不敏感的包含匹配；输入至少 3 个字符后，也会容忍有限的漏字、多字、错字或相邻字母颠倒。关键词越长可容忍的错误越多，最多 3 处；清空搜索即可恢复完整列表。
-5. 在“本地分支”或“远端待跟踪”标签中选择目标并点击“切换到所选分支”，也可以双击。远端候选来自本机现有 remote-tracking refs，不会自动执行 `fetch`，并按短分支名过滤本地已存在项，例如本地已有 `main` 时不再列出 `origin/main`。
+4. 分支区域只显示“本地分支”和“远端待跟踪”两个可操作标签。搜索使用 trim 后、大小写不敏感的包含匹配，不再对漏字、多字、错字或相邻字母颠倒做容错猜测；清空搜索即可恢复完整列表。
+5. 在“本地分支”或“远端待跟踪”标签中选择目标并点击“切换到所选分支”，也可以双击。选中仓库或点击“刷新”时，应用会先读取 remote 名单，再对每个 remote 用显式 `+refs/heads/*:refs/remotes/<remote>/*` refspec 执行 fetch + prune；即使仓库原 refspec 只抓单分支，也会完整更新远端 heads。随后按短分支名过滤本地已存在项，例如本地已有 `main` 时不再列出 `origin/main`。
 
-切换失败时会原样显示 Git 的诊断信息。应用不会自动执行 stash、reset、clean、pull 或 fetch；请先自行处理未提交改动、分支冲突或过期远端引用，再点击“刷新”。
+分支刷新或切换失败时会原样显示 Git 的诊断信息。应用不会自动执行 stash、reset、clean、pull 或 push；fetch 使用非交互模式，认证未配置、网络失败或超时会保留页面现有结果并提示错误。
 
 队列最终成功时会发送“GitCloneGui · 克隆完成”系统通知；父项目或任一子仓库失败时会发送“GitCloneGui · 克隆失败”通知并带上阶段错误。用户主动取消不会发送通知。若系统不支持桌面通知或通知权限被关闭，页内结果与 Git 输出仍会正常保留，克隆结果不会受到影响。
 

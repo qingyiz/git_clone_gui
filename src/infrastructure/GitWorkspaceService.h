@@ -30,6 +30,8 @@ public:
 private:
     enum class GitOperation {
         None,
+        LoadRemotes,
+        FetchRemote,
         LoadCurrent,
         LoadRefs,
         LoadStatus,
@@ -39,6 +41,8 @@ private:
     static BranchCatalog parseBranchRefs(const QString &currentBranch,
                                          const QByteArray &output);
     static WorkingTreeStatus parseWorkingTreeStatus(const QByteArray &output);
+    void startNextRemoteFetch();
+    void startLoadCurrent();
     void startGit(GitOperation operation, const QStringList &arguments);
     void handleGitFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void failGit(const QString &message);
@@ -52,6 +56,8 @@ private:
     GitOperation m_gitOperation = GitOperation::None;
     QString m_repositoryPath;
     QString m_currentBranch;
+    QStringList m_remoteNames;
+    int m_nextRemoteIndex = 0;
     BranchCatalog m_pendingCatalog;
     QString m_switchBranchName;
     QByteArray m_gitOutput;

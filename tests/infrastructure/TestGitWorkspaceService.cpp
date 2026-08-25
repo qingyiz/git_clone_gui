@@ -53,6 +53,7 @@ private slots:
     void loadsBranchesAndSwitchesLocalBranch();
     void loadsCleanAndDirtyWorkingTreeStatus();
     void detectsConflictedWorkingTreeStatus();
+    void refreshesRemoteBranchesBeforeLoadingCatalog();
     void switchesRemoteTrackingBranch();
 };
 
@@ -260,6 +261,61 @@ void TestGitWorkspaceService::detectsConflictedWorkingTreeStatus()
         qvariant_cast<BranchCatalog>(branchSpy.takeFirst().at(1));
     QCOMPARE(catalog.workingTreeStatus.conflicts, 1);
     QVERIFY(catalog.workingTreeStatus.hasChanges());
+}
+
+void TestGitWorkspaceService::refreshesRemoteBranchesBeforeLoadingCatalog()
+{
+    QTemporaryDir remote;
+    QTemporaryDir publisher;
+    QTemporaryDir consumerParent;
+    QVERIFY(remote.isValid());
+    QVERIFY(publisher.isValid());
+    QVERIFY(consumerParent.isValid());
+    QVERIFY(runGit(remote.path(), {QStringLiteral("init"), QStringLiteral("-q"),
+                                   QStringLiteral("--bare")}));
+    initializeRepository(publisher.path());
+    QVERIFY(runGit(publisher.path(), {QStringLiteral("remote"), QStringLiteral("add"),
+                                      QStringLiteral("origin"), remote.path()}));
+    QVERIFY(runGit(publisher.path(), {QStringLiteral("push"), QStringLiteral("-qu"),
+                                      QStringLiteral("origin"), QStringLiteral("main")}));
+    QVERIFY(runGit(remote.path(), {QStringLiteral("symbolic-ref"),
+                                   QStringLiteral("HEAD"),
+                                   QStringLiteral("refs/heads/main")}));
+
+    const QString consumer = QDir(consumerParent.path()).filePath(QStringLiteral("consumer"));
+    QVERIFY(runGit(consumerParent.path(), {QStringLiteral("clone"), QStringLiteral("-q"),
+                                           remote.path(), consumer}));
+    QVERIFY(runGit(consumer, {QStringLiteral("config"),
+                              QStringLiteral("remote.origin.fetch"),
+                              QStringLiteral("+refs/heads/main:refs/remotes/origin/main")}));
+    QVERIFY(runGit(publisher.path(), {QStringLiteral("branch"),
+                                      QStringLiteral("feature/server-only")}));
+    QVERIFY(runGit(publisher.path(), {QStringLiteral("push"), QStringLiteral("-q"),
+                                      QStringLiteral("origin"),
+                                      QStringLiteral("feature/server-only")}));
+    QVERIFY(!runGit(consumer, {QStringLiteral("show-ref"), QStringLiteral("--verify"),
+                               QStringLiteral("refs/remotes/origin/feature/server-only")}));
+
+    GitWorkspaceService service;
+    QSignalSpy branchSpy(&service, &WorkspaceService::branchesLoaded);
+    service.loadBranches(consumer);
+    QVERIFY(branchSpy.wait(10000));
+    BranchCatalog catalog = qvariant_cast<BranchCatalog>(branchSpy.takeFirst().at(1));
+    QVERIFY(catalog.remoteBranches.contains(
+        QStringLiteral("origin/feature/server-only")));
+    QVERIFY(catalog.remoteCandidates.contains(
+        QStringLiteral("origin/feature/server-only")));
+
+    QVERIFY(runGit(publisher.path(), {QStringLiteral("push"), QStringLiteral("-q"),
+                                      QStringLiteral("origin"), QStringLiteral("--delete"),
+                                      QStringLiteral("feature/server-only")}));
+    service.loadBranches(consumer);
+    QVERIFY(branchSpy.wait(10000));
+    catalog = qvariant_cast<BranchCatalog>(branchSpy.takeFirst().at(1));
+    QVERIFY(!catalog.remoteBranches.contains(
+        QStringLiteral("origin/feature/server-only")));
+    QVERIFY(!catalog.remoteCandidates.contains(
+        QStringLiteral("origin/feature/server-only")));
 }
 
 void TestGitWorkspaceService::switchesRemoteTrackingBranch()

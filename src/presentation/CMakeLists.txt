@@ -3,8 +3,6 @@ add_library(git_clone_presentation STATIC
     AppStyle.h
     BranchSelector.cpp
     BranchSelector.h
-    BranchNameMatcher.cpp
-    BranchNameMatcher.h
     ChildRepositoryCard.cpp
     ChildRepositoryCard.h
     ClonePage.cpp

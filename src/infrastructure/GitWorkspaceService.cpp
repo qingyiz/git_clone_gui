@@ -114,9 +114,10 @@ void GitWorkspaceService::loadBranches(const QString &repositoryPath)
     cancelGitOperation();
     m_repositoryPath = QDir(repositoryPath).absolutePath();
     m_currentBranch.clear();
-    startGit(GitOperation::LoadCurrent,
-             {QStringLiteral("-C"), m_repositoryPath, QStringLiteral("branch"),
-              QStringLiteral("--show-current")});
+    m_remoteNames.clear();
+    m_nextRemoteIndex = 0;
+    startGit(GitOperation::LoadRemotes,
+             {QStringLiteral("-C"), m_repositoryPath, QStringLiteral("remote")});
 }
 
 void GitWorkspaceService::switchBranch(const QString &repositoryPath,
@@ -223,12 +224,32 @@ WorkingTreeStatus GitWorkspaceService::parseWorkingTreeStatus(const QByteArray &
     return status;
 }
 
+void GitWorkspaceService::startNextRemoteFetch()
+{
+    if (m_nextRemoteIndex >= m_remoteNames.size()) {
+        startLoadCurrent();
+        return;
+    }
+    const QString remote = m_remoteNames.at(m_nextRemoteIndex);
+    const QString refspec = QStringLiteral("+refs/heads/*:refs/remotes/%1/*").arg(remote);
+    startGit(GitOperation::FetchRemote,
+             {QStringLiteral("-C"), m_repositoryPath, QStringLiteral("fetch"),
+              QStringLiteral("--prune"), remote, refspec});
+}
+
+void GitWorkspaceService::startLoadCurrent()
+{
+    startGit(GitOperation::LoadCurrent,
+             {QStringLiteral("-C"), m_repositoryPath, QStringLiteral("branch"),
+              QStringLiteral("--show-current")});
+}
+
 void GitWorkspaceService::startGit(GitOperation operation, const QStringList &arguments)
 {
     m_gitOperation = operation;
     m_gitOutput.clear();
     emit gitBusyChanged(true);
-    m_gitTimeout.start();
+    m_gitTimeout.start(operation == GitOperation::FetchRemote ? 60000 : 15000);
     m_gitProcess.start(QStringLiteral("git"), arguments);
 }
 
@@ -240,6 +261,25 @@ void GitWorkspaceService::handleGitFinished(int exitCode, QProcess::ExitStatus e
     const QString repositoryPath = m_repositoryPath;
     const QString output = QString::fromLocal8Bit(m_gitOutput).trimmed();
 
+    if (completedOperation == GitOperation::LoadRemotes
+        && exitStatus == QProcess::NormalExit && exitCode == 0) {
+        const QStringList lines = output.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        for (const QString &line : lines) {
+            const QString remote = line.trimmed();
+            if (!remote.isEmpty()) {
+                m_remoteNames.append(remote);
+            }
+        }
+        startNextRemoteFetch();
+        return;
+    }
+    if (completedOperation == GitOperation::FetchRemote
+        && exitStatus == QProcess::NormalExit
+        && exitCode == 0) {
+        ++m_nextRemoteIndex;
+        startNextRemoteFetch();
+        return;
+    }
     if (completedOperation == GitOperation::LoadCurrent && exitStatus == QProcess::NormalExit
         && exitCode == 0) {
         m_currentBranch = output;
@@ -302,6 +342,8 @@ void GitWorkspaceService::resetGitOperation()
     m_gitOperation = GitOperation::None;
     m_gitOutput.clear();
     m_currentBranch.clear();
+    m_remoteNames.clear();
+    m_nextRemoteIndex = 0;
     m_pendingCatalog = BranchCatalog {};
     m_switchBranchName.clear();
 }
